@@ -1,85 +1,49 @@
 // Frontend DTO types; mirrors packages/shared contracts.
 
-export type SeverityLevel = "normal" | "low" | "medium" | "high" | "critical";
+export * from "@trackchain/shared";
 
-export type DefectClass =
-  | "crack"
-  | "spalling"
-  | "corrugation"
-  | "missing_fastener"
-  | "gauge_widening"
-  | "alignment_fault"
-  | "twist_exceedance"
-  | "squat"
-  | "unclassified_anomaly";
+import type {
+  DefectEvent,
+  MonitoringSession,
+  SeverityLevel,
+  DefectClass,
+} from "@trackchain/shared";
 
-export type DecisionType = "OK" | "KNOWN" | "NOVEL";
-
-export interface LineGeometry {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  angle_deg: number;
-  length: number;
-}
-
-export interface TelemetryPoint {
+export interface AlertEvent {
   id: string;
-  sessionId: string;
-  timestamp: string;
-  chainageM: number;
-  speedKmh: number;
-  vibrationRms: number;
-  trackGaugeMm: number;
-  cantMm: number;
-  twistMmPerM: number;
-  verticalUnevennessMm: number;
-  alignmentDevMm: number;
-  latitude?: number;
-  longitude?: number;
-}
-
-export interface DefectEvent {
-  id: string;
-  sessionId: string;
-  timestamp: string;
-  chainageM: number;
-  defectClass: DefectClass;
+  defectId: string;
   severity: SeverityLevel;
-  confidence: number;
-  streamSource: "vision" | "geometry" | "fused";
-  imageUrl?: string;
-  videoTimestampSec?: number;
-  description?: string;
-  status: "open" | "acknowledged" | "resolved";
-  coordinates?: {
-    lat: number;
-    lng: number;
-  };
+  defectClass: DefectClass;
+  chainageM: number;
+  message: string;
+  timestamp: string;
+  acknowledged: boolean;
+  acknowledgedBy?: string;
+  acknowledgedAt?: string;
 }
 
-export interface MonitoringSession {
-  id: string;
-  name: string;
-  trackId: string;
+export interface ReportConfig {
+  sessionId: string;
   trackSection: string;
-  startTime: string;
-  endTime?: string;
-  status: "active" | "completed" | "paused" | "failed";
-  totalDistanceKm: number;
-  defectsCount: number;
-  operatorName?: string;
+  dateRange: [string, string];
+  format: "pdf" | "csv";
+  includeVisualEvidence: boolean;
+  complianceStandard: "EN 13848" | "RDSO CTI";
 }
 
-export interface SegmentDecision {
-  windowId: string;
-  startChainageM: number;
-  endChainageM: number;
-  decision: DecisionType;
-  visionScore: number;
-  geometryScore: number;
-  calibratedProb: number;
-  primaryFault?: DefectClass;
+export interface FilterState {
+  sessionId?: string;
+  severity?: string;
+  defectClass?: string;
+  streamSource?: string;
+  chainageMin?: number;
+  chainageMax?: number;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface RealtimePayload {
+  type: "telemetry" | "defect" | "alert" | "status";
+  data: any;
   timestamp: string;
 }
