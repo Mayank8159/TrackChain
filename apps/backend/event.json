@@ -1,9 +1,0 @@
-{
-  "httpMethod": "POST",
-  "path": "/process-frame",
-  "headers": {
-    "Content-Type": "application/json"
-  },
-  "body": "{\"camera_id\": \"cam-00\", \"frame\": \"<BASE64_FRAME_HERE>\"}",
-  "isBase64Encoded": false
-}

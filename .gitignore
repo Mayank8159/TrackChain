@@ -1,3 +1,5 @@
+# Ignore node_modules, venv, artifacts, data, env files, and OS junk.
+
 # Dependencies
 node_modules/
 .pnpm-store/
@@ -6,25 +8,47 @@ node_modules/
 dist/
 .next/
 out/
+build/
+*.egg-info/
+*.egg
 
 # Turbo
 .turbo/
 
-# Python
+# Python virtualenvs & cache
 __pycache__/
 *.py[cod]
-*.egg-info/
 .venv/
 venv/
-.env
-*.egg
+ENV/
+env/
 
-# Environment variables
+# Environment variables & secrets
 .env
 .env.local
 .env.*.local
+*.pem
+*.key
 
-# IDE
+# Data & ML artifacts
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/external/*
+!data/external/.gitkeep
+artifacts/checkpoints/*
+!artifacts/checkpoints/.gitkeep
+artifacts/calibration/*
+!artifacts/calibration/.gitkeep
+artifacts/exports/*
+!artifacts/exports/.gitkeep
+*.pt
+*.onnx
+*.tflite
+*.engine
+
+# IDE & Editor
 .vscode/
 .idea/
 *.swp
@@ -34,14 +58,12 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Logs
+# Logs & Testing
 *.log
 npm-debug.log*
 pnpm-debug.log*
-
-# Testing
 coverage/
-
-# Misc
+.pytest_cache/
 *.tsbuildinfo

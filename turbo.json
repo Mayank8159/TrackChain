@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "_comment": "Turborepo pipeline config for cached build/dev/test across packages.",
   "globalDependencies": ["**/.env.*local"],
   "tasks": {
     "build": {
@@ -14,6 +15,9 @@
       "dependsOn": ["^build"]
     },
     "type-check": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
       "dependsOn": ["^build"]
     }
   }
