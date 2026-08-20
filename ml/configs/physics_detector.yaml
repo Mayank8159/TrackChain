@@ -1,0 +1,32 @@
+# EN 13848 & RDSO Track Geometry Physics Thresholds (tc.v1 SOTA).
+
+standards:
+  rdso_broad_gauge_1676:
+    nominal_gauge_mm: 1676.0
+    limits_mm:
+      twist_3m_mm: 4.0          # RDSO 3m Twist Immediate Action Limit (IAL)
+      twist_6m_mm: 6.0          # RDSO 6m Twist IAL
+      versine_10m_mm: 6.0       # 10m Chord Alignment IAL
+      versine_20m_mm: 10.0      # 20m Chord Alignment IAL
+      unevenness_10m_mm: 6.0    # 10m Chord Longitudinal Level IAL
+      unevenness_30m_mm: 12.0   # 30m Chord Longitudinal Level IAL
+      gauge_variation_mm: 6.0   # Gauge widening/tightening limit (+6mm / -3mm)
+      cross_level_mm: 20.0      # Cant deviation limit
+    alert_limits_mm:
+      twist_3m_mm: 2.8          # Alert Limit (AL)
+      versine_10m_mm: 4.0
+      unevenness_10m_mm: 4.0
+      gauge_variation_mm: 4.0
+
+  en13848_standard_gauge_1435:
+    nominal_gauge_mm: 1435.0
+    limits_mm:
+      twist_3m_mm: 5.0
+      versine_10m_mm: 6.0
+      unevenness_10m_mm: 6.0
+      gauge_variation_mm: 7.0
+      cross_level_mm: 20.0
+
+calibration:
+  exceedance_multiplier: 2.0   # Score = min(1.0, Measured / (2.0 * Limit))
+  operating_threshold: 0.50    # Value at limit is exactly 0.50 (triggers alert)

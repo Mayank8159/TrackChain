@@ -1,14 +1,23 @@
-# Chainage bin size and sensor-to-distance mapping.
+# Chainage spatial resampling configuration (tc.v1 SOTA).
 
-step_size_m: 0.25
-window_length_m: 25.0
-overlap_ratio: 0.20
+resampling:
+  step_size_m: 0.25          # 25 cm spatial resolution
+  min_speed_mps: 0.20        # Drop stationary telemetry to prevent spatial aliasing
+  nominal_gauge_mm: 1676.0   # Indian Broad Gauge (1676mm) / Standard Gauge (1435mm)
+  window_length_m: 25.0      # Segment window size
+  overlap_ratio: 0.20        # 20% overlap between adjacent track segments
 
-sensors:
-  optical_camera:
-    fps: 30
-    spatial_resolution_mm: 1.0
-  imu_accelerometer:
-    sample_rate_hz: 500
-  laser_profiler:
-    sample_rate_hz: 200
+chords:
+  twist_base_m:
+    - 3.0
+    - 6.0
+  versine_chord_m:
+    - 10.0
+    - 20.0
+  unevenness_chord_m:
+    - 10.0
+    - 30.0
+
+wavelength_filter:
+  highpass_cutoff_m: 70.0    # Remove macro-curves (>70m wavelength)
+  order: 3

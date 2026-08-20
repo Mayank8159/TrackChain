@@ -1,9 +1,31 @@
-# PatchCore settings and normal-data source.
+# PatchCore SOTA visual anomaly detection configuration (tc.v1).
 
-backbone: "wide_resnet50_2"
-coreset_sampling_ratio: 0.01
-feature_layers:
-  - "layer2"
-  - "layer3"
-normal_data_dir: "data/processed/normal_frames"
-anomaly_score_threshold: 0.55
+model:
+  backbone: "wide_resnet50_2"
+  fallback_backbone: "resnet18"
+  feature_layers:
+    - "layer2"
+    - "layer3"
+  patch_size: 3
+  stride: 1
+  coreset_sampling_ratio: 0.10
+  k_nearest: 1
+  distance_metric: "L2"
+  anomaly_map_sigma: 4.0
+  img_size: 224
+
+calibration:
+  threshold_percentile: 99.0  # P99 of normal validation distances
+  sigmoid_k: 0.5              # Sigmoid slope factor
+  default_threshold: 0.50     # Operating probability threshold for tc.v1 fired flag
+
+data:
+  normal_dataset_dir: "data/external/rail_normal_only"
+  train_split: "train/good"
+  valid_split: "valid/good"
+
+paths:
+  base_weights_dir: "artifacts/base/vision"
+  checkpoint_dir: "artifacts/checkpoints/vision"
+  calibration_dir: "artifacts/calibration"
+  export_dir: "artifacts/exports/vision"

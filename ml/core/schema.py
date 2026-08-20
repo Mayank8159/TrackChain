@@ -1,7 +1,7 @@
-# Shared contracts: ChainageWindow, GeometryFeatures, CalibratedSignal, SegmentDecision (tc.v1).
+# Shared contracts: ChainageWindow, TrackSegment, GeometryFeatures, CalibratedSignal, SegmentDecision (tc.v1).
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Union
 from enum import Enum
 import numpy as np
 
@@ -67,6 +67,17 @@ class ChainageWindow:
 
 
 @dataclass
+class TrackSegment:
+    """Unified physical track segment bundling spatial coordinates, vision frames, and telemetry."""
+    segment_id: str
+    chainage_start_m: float
+    chainage_end_m: float
+    timestamp: Optional[Any] = None
+    frames: List[np.ndarray] = field(default_factory=list)
+    telemetry: Dict[str, np.ndarray] = field(default_factory=dict)
+
+
+@dataclass
 class GeometryFeatures:
     """Deterministic track geometry metrics compliant with EN 13848-1."""
     chainage_m: float
@@ -91,6 +102,32 @@ class CalibratedSignal:
     bbox: Optional[Tuple[float, float, float, float]] = None  # (x1, y1, x2, y2)
     explanation: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def value(self) -> float:
+        return self.calibrated_prob
+
+    @property
+    def fired(self) -> bool:
+        return self.is_anomaly
+
+    @property
+    def label(self) -> Optional[DefectClass]:
+        return self.predicted_class
+
+
+@dataclass
+class SegmentSignals:
+    """Unified collection of multi-modal signals associated with a TrackSegment."""
+    v_known: List[CalibratedSignal] = field(default_factory=list)
+    v_novel: List[CalibratedSignal] = field(default_factory=list)
+    g_known: List[CalibratedSignal] = field(default_factory=list)
+    g_novel: List[CalibratedSignal] = field(default_factory=list)
+    g_type: List[CalibratedSignal] = field(default_factory=list)
+
+    @property
+    def all_signals(self) -> List[CalibratedSignal]:
+        return self.v_known + self.v_novel + self.g_known + self.g_novel + self.g_type
 
 
 @dataclass
