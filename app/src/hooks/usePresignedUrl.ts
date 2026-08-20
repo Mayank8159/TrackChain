@@ -21,7 +21,7 @@ export function usePresignedUrl(filename?: string, contentType = "video/mp4") {
       .getPresignedUploadUrl(filename, contentType)
       .then((res) => {
         if (isMounted) {
-          setUrl(res.fileUrl);
+          setUrl(res.uploadUrl);
           setError(null);
         }
       })

@@ -1,4 +1,4 @@
-// Fetch one session by id with its summary.
+// Fetch one session by id with its summary (tc.v1).
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
@@ -7,11 +7,11 @@ import type { MonitoringSession } from "../lib/types";
 export function useSession(sessionId: string) {
   return useQuery<MonitoringSession>({
     queryKey: ["session", sessionId],
-    queryFn: async () => {
+    queryFn: async (): Promise<MonitoringSession> => {
       try {
         return await api.getSessionById(sessionId);
       } catch {
-        return {
+        const fallback: MonitoringSession = {
           id: sessionId,
           name: "NDLS-AGC Mainline Inspection Run",
           trackId: "IR-NR-01",
@@ -22,6 +22,7 @@ export function useSession(sessionId: string) {
           defectsCount: 5,
           operatorName: "Chief Track Inspector A. Sharma",
         };
+        return fallback;
       }
     },
     enabled: !!sessionId,

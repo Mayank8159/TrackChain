@@ -1,3 +1,3 @@
-// Barrel export for shared types and constants.
+// Shared TypeScript types and constants for TrackChain.
 
 export * from "./types";

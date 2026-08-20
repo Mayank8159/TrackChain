@@ -1,4 +1,4 @@
-# FastAPI entrypoint: app factory, CORS, router mounting, startup/shutdown.
+# FastAPI entrypoint: app factory, CORS, router mounting, startup/shutdown (tc.v1 SOTA).
 
 from __future__ import annotations
 
@@ -6,11 +6,19 @@ import base64
 import time
 from typing import List
 
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    from mangum import Mangum
+except ImportError:
+    Mangum = None
+
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from mangum import Mangum
 
 from src.config import get_settings
 from src.core.logging import setup_logging
@@ -20,7 +28,17 @@ from src.schemas.telemetry import (
     ProcessFrameResponse,
     LineGeometry,
 )
-from src.api.routes import health, telemetry, defects, sessions, media
+from src.api.routes import (
+    health,
+    telemetry,
+    defects,
+    sessions,
+    media,
+    devices,
+    dashboard,
+    ml,
+    alerts,
+)
 
 # Setup structured logging
 logger = setup_logging()
@@ -35,7 +53,7 @@ except Exception as exc:
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="TrackChain Integrated Track Monitoring & Edge AI Backend API",
+    description="TrackChain Integrated Track Monitoring & Edge AI Backend API (tc.v1)",
 )
 
 # CORS
@@ -47,12 +65,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount API Routers
+# Mount API Routers (Standard /api routes)
 app.include_router(health.router)
 app.include_router(telemetry.router)
 app.include_router(defects.router)
 app.include_router(sessions.router)
 app.include_router(media.router)
+app.include_router(devices.router)
+app.include_router(dashboard.router)
+app.include_router(ml.router)
+app.include_router(alerts.router)
+
+# Mount API v1 Routers (/api/v1 alias support)
+app.include_router(telemetry.router, prefix="/api/v1")
+app.include_router(defects.router, prefix="/api/v1")
+app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(media.router, prefix="/api/v1")
+app.include_router(devices.router, prefix="/api/v1")
+app.include_router(dashboard.router, prefix="/api/v1")
+app.include_router(ml.router, prefix="/api/v1")
+app.include_router(alerts.router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +102,8 @@ HOUGH_MAX_LINE_GAP = 10
 
 def decode_frame(b64: str) -> np.ndarray:
     """Decode a base64 string into an OpenCV BGR image."""
+    if cv2 is None:
+        raise RuntimeError("OpenCV (cv2) is not installed in the current environment")
     raw = base64.b64decode(b64)
     arr = np.frombuffer(raw, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -80,6 +114,8 @@ def decode_frame(b64: str) -> np.ndarray:
 
 def detect_lines(img: np.ndarray) -> np.ndarray:
     """Run Canny → HoughLinesP and return detected segments."""
+    if cv2 is None:
+        return np.array([])
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, CANNY_LOW, CANNY_HIGH)
@@ -143,4 +179,4 @@ def process_frame(req: ProcessFrameRequest):
 
 
 # Lambda / Serverless Mangum handler
-handler = Mangum(app)
+handler = Mangum(app) if Mangum else None

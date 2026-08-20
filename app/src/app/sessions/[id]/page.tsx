@@ -21,7 +21,7 @@ import type { DefectEvent } from "@/lib/types";
 
 export default function SessionDetailPage() {
   const params = useParams();
-  const sessionId = params.id as string;
+  const sessionId = (params?.id as string) || "";
 
   const { data: session } = useSession(sessionId);
   const { data: telemetry = [] } = useTelemetry(sessionId, 0);

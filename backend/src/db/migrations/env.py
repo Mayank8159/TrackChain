@@ -1,5 +1,6 @@
-# Alembic migration environment bound to the app models.
+# Alembic migration environment bound to all TrackChain ORM models (tc.v1 SOTA).
 
+import os
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
@@ -7,10 +8,17 @@ from alembic import context
 from src.config import get_settings
 from src.db.session import Base
 from src.db.models import (
+    Device,
     MonitoringSession,
+    TrackSegment,
     TelemetryRecord,
-    DefectEvent,
     MediaAsset,
+    MLSignal,
+    DefectEvent,
+    CalibrationArtifact,
+    ModelRegistry,
+    Alert,
+    IngestionKey,
 )
 
 config = context.config
@@ -19,7 +27,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+db_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = Base.metadata
 

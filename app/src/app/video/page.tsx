@@ -16,13 +16,15 @@ function generateSyncedTelemetry(): TelemetryPoint[] {
   for (let i = 0; i <= 60; i++) {
     const chainage = 12000 + i * 20; // 20 meters per second (~72 km/h)
     const hasAnomaly = i >= 25 && i <= 30;
+    const speedKmh = 72 + Math.sin(i / 5) * 2;
 
     points.push({
       id: `tel-${i}`,
       sessionId: "SES-20260821-01",
       timestamp: new Date(Date.now() - (60 - i) * 1000).toISOString(),
       chainageM: chainage,
-      speedKmh: 72 + (Math.sin(i / 5) * 2),
+      speedMps: speedKmh / 3.6,
+      speedKmh: speedKmh,
       vibrationRms: hasAnomaly ? 2.8 + Math.random() * 0.8 : 0.8 + Math.random() * 0.3,
       trackGaugeMm: hasAnomaly ? 1446 + Math.random() * 3 : 1435 + (Math.random() * 2 - 1),
       cantMm: 12 + Math.sin(i / 10) * 5,
@@ -36,7 +38,7 @@ function generateSyncedTelemetry(): TelemetryPoint[] {
 
 export default function VideoPlaybackPage() {
   const searchParams = useSearchParams();
-  const seekParam = searchParams.get("seek");
+  const seekParam = searchParams ? searchParams.get("seek") : null;
 
   const [telemetryData] = useState<TelemetryPoint[]>(generateSyncedTelemetry);
   const [currentSec, setCurrentSec] = useState<number>(
@@ -100,7 +102,7 @@ export default function VideoPlaybackPage() {
                   <span className="badge-cyan">HD 1080p60</span>
                 </div>
                 <span className="text-xs font-mono text-scada-muted bg-scada-panel/80 px-2 py-0.5 rounded border border-scada-border">
-                  Chainage: {(currentPoint?.chainageM / 1000).toFixed(3)} km
+                  Chainage: {((currentPoint?.chainageM || 0) / 1000).toFixed(3)} km
                 </span>
               </div>
 
@@ -174,7 +176,7 @@ export default function VideoPlaybackPage() {
                     </button>
                   </div>
                   <span className="text-xs font-mono text-scada-muted">
-                    Speed: {currentPoint?.speedKmh.toFixed(1)} km/h
+                    Speed: {currentPoint?.speedKmh ? currentPoint.speedKmh.toFixed(1) : "0.0"} km/h
                   </span>
                 </div>
               </div>
@@ -188,49 +190,49 @@ export default function VideoPlaybackPage() {
                 <div className="flex justify-between border-b border-scada-border pb-1.5">
                   <span className="text-scada-muted">Chainage:</span>
                   <span className="text-scada-cyan font-bold">
-                    {(currentPoint?.chainageM / 1000).toFixed(3)} km
+                    {((currentPoint?.chainageM || 0) / 1000).toFixed(3)} km
                   </span>
                 </div>
                 <div className="flex justify-between border-b border-scada-border pb-1.5">
                   <span className="text-scada-muted">Track Gauge:</span>
                   <span
                     className={
-                      currentPoint?.trackGaugeMm > 1445
+                      (currentPoint?.trackGaugeMm || 0) > 1445
                         ? "text-scada-red font-bold"
                         : "text-scada-green"
                     }
                   >
-                    {currentPoint?.trackGaugeMm.toFixed(1)} mm
+                    {(currentPoint?.trackGaugeMm || 1435).toFixed(1)} mm
                   </span>
                 </div>
                 <div className="flex justify-between border-b border-scada-border pb-1.5">
                   <span className="text-scada-muted">Vibration RMS:</span>
                   <span
                     className={
-                      currentPoint?.vibrationRms > 2.0
+                      (currentPoint?.vibrationRms || 0) > 2.0
                         ? "text-scada-red font-bold"
                         : "text-scada-cyan"
                     }
                   >
-                    {currentPoint?.vibrationRms.toFixed(2)} g
+                    {(currentPoint?.vibrationRms || 0).toFixed(2)} g
                   </span>
                 </div>
                 <div className="flex justify-between border-b border-scada-border pb-1.5">
                   <span className="text-scada-muted">Cant (Superelevation):</span>
                   <span className="text-scada-text">
-                    {currentPoint?.cantMm.toFixed(1)} mm
+                    {(currentPoint?.cantMm || 0).toFixed(1)} mm
                   </span>
                 </div>
                 <div className="flex justify-between border-b border-scada-border pb-1.5">
                   <span className="text-scada-muted">Track Twist:</span>
                   <span
                     className={
-                      currentPoint?.twistMmPerM > 3.0
+                      (currentPoint?.twistMmPerM || 0) > 3.0
                         ? "text-scada-amber font-bold"
                         : "text-scada-text"
                     }
                   >
-                    {currentPoint?.twistMmPerM.toFixed(2)} mm/m
+                    {(currentPoint?.twistMmPerM || 0).toFixed(2)} mm/m
                   </span>
                 </div>
               </div>

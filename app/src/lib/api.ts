@@ -1,10 +1,17 @@
-// Typed backend client: fetch telemetry, defects, sessions, and presigned media URLs.
+// Typed backend client: fetch telemetry, defects, sessions, devices, dashboard, and media (tc.v1).
 
 import type {
   DefectEvent,
   MonitoringSession,
   TelemetryPoint,
+  Device,
+  DashboardSummary,
+  MLSignal,
   LineGeometry,
+  TelemetryBatchIngestRequest,
+  PresignUploadRequest,
+  PresignUploadResponse,
+  PresignDownloadResponse,
 } from "./types";
 
 const API_BASE_URL =
@@ -32,16 +39,24 @@ export const api = {
   // Health
   getHealth: () => request<{ status: string; service: string }>("/health"),
 
+  // Devices
+  getDevices: () => request<Device[]>("/api/devices"),
+  registerDevice: (device: Partial<Device>) =>
+    request<Device>("/api/devices", {
+      method: "POST",
+      body: JSON.stringify(device),
+    }),
+
   // Telemetry
   getTelemetrySeries: (sessionId: string, downsample = 100) =>
     request<TelemetryPoint[]>(
       `/api/telemetry?session_id=${sessionId}&downsample=${downsample}`
     ),
 
-  postTelemetryBatch: (points: Partial<TelemetryPoint>[]) =>
-    request<{ inserted: number }>("/api/telemetry", {
+  postTelemetryBatch: (payload: TelemetryBatchIngestRequest) =>
+    request<{ status: string; inserted: number }>("/api/telemetry", {
       method: "POST",
-      body: JSON.stringify(points),
+      body: JSON.stringify(payload),
     }),
 
   // Defects
@@ -49,11 +64,13 @@ export const api = {
     sessionId?: string;
     severity?: string;
     defectClass?: string;
+    status?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters?.sessionId) params.append("session_id", filters.sessionId);
     if (filters?.severity) params.append("severity", filters.severity);
     if (filters?.defectClass) params.append("defect_class", filters.defectClass);
+    if (filters?.status) params.append("status", filters.status);
     return request<DefectEvent[]>(`/api/defects?${params.toString()}`);
   },
 
@@ -75,11 +92,33 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  // Media
-  getPresignedUploadUrl: (filename: string, contentType: string) =>
-    request<{ uploadUrl: string; fileUrl: string }>("/api/media/presign-upload", {
+  // Dashboard KPI
+  getDashboardSummary: () =>
+    request<DashboardSummary>("/api/dashboard/summary"),
+
+  // ML Signals
+  getMLSignals: (sessionId: string, segmentId?: string) => {
+    const params = new URLSearchParams({ session_id: sessionId });
+    if (segmentId) params.append("segment_id", segmentId);
+    return request<MLSignal[]>(`/api/ml/signals?${params.toString()}`);
+  },
+
+  // Media & S3
+  getPresignedUploadUrl: (filename: string, contentType: string, sessionId = "default") =>
+    request<PresignUploadResponse>("/api/media/presign-upload", {
       method: "POST",
-      body: JSON.stringify({ filename, contentType }),
+      body: JSON.stringify({
+        filename,
+        contentType,
+        session_id: sessionId,
+        media_type: filename.endsWith(".mp4") ? "video_segment" : "evidence_image",
+      }),
+    }),
+
+  getPresignedDownloadUrl: (s3Key: string) =>
+    request<PresignDownloadResponse>("/api/media/presign-download", {
+      method: "POST",
+      body: JSON.stringify({ s3_key: s3Key }),
     }),
 
   // Frame Processing (CV line detection)

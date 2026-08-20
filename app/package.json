@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.59.0",
-    "@trackchain/shared": "workspace:*",
+    "@trackchain/shared": "file:../packages/shared",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.469.0",

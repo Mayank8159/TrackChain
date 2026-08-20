@@ -1,10 +1,8 @@
-// Frontend DTO types; mirrors packages/shared contracts.
+// Frontend DTO types; mirrors packages/shared contracts (tc.v1).
 
 export * from "@trackchain/shared";
 
 import type {
-  DefectEvent,
-  MonitoringSession,
   SeverityLevel,
   DefectClass,
 } from "@trackchain/shared";

@@ -1,41 +1,30 @@
-# Session/run management: create, list, and summarize runs.
+# Session/run management: create, list, and summarize runs (tc.v1).
 
 from typing import List, Optional
-from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from src.api.deps import get_db_session
 from src.db.models import MonitoringSession
+from src.schemas.sessions import SessionStartRequest, SessionResponse
+
+# Backward compatibility alias
+SessionCreate = SessionStartRequest
 
 router = APIRouter(prefix="/api/sessions", tags=["Sessions"])
 
 
-class SessionCreate(BaseModel):
-    name: str
-    track_id: str
-    track_section: str
-    operator_name: Optional[str] = None
-
-
-class SessionResponse(SessionCreate):
-    id: str
-    status: str
-    total_distance_km: float
-    defects_count: int
-
-    class Config:
-        from_attributes = True
-
-
 @router.post("", response_model=SessionResponse)
-def create_session(payload: SessionCreate, db: Session = Depends(get_db_session)):
+def create_session(payload: SessionStartRequest, db: Session = Depends(get_db_session)):
     """Create a new track inspection session."""
     ses = MonitoringSession(
         name=payload.name,
         track_id=payload.track_id,
         track_section=payload.track_section,
+        track_direction=payload.track_direction,
         operator_name=payload.operator_name,
-        status="active",
+        weather=payload.weather,
+        device_id=payload.device_id,
+        status="running",
     )
     db.add(ses)
     db.commit()

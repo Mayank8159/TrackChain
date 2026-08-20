@@ -46,7 +46,7 @@ export function Sidebar({ className }: SidebarProps) {
           const isActive =
             item.href === "/"
               ? pathname === "/"
-              : pathname.startsWith(item.href);
+              : (pathname ? pathname.startsWith(item.href) : false);
 
           return (
             <Link
