@@ -1,0 +1,9 @@
+# PatchCore settings and normal-data source.
+
+backbone: "wide_resnet50_2"
+coreset_sampling_ratio: 0.01
+feature_layers:
+  - "layer2"
+  - "layer3"
+normal_data_dir: "data/processed/normal_frames"
+anomaly_score_threshold: 0.55

@@ -1,0 +1,15 @@
+# Dataset paths, splits, and augmentation settings.
+
+raw_data_dir: "data/raw"
+processed_data_dir: "data/processed"
+external_data_dir: "data/external"
+
+splits:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+augmentation:
+  random_horizontal_flip: 0.5
+  brightness_jitter: 0.2
+  contrast_jitter: 0.2

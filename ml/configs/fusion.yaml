@@ -1,0 +1,9 @@
+# Fusion thresholds and persistence window.
+
+persistence_window: 3
+known_fault_confidence_threshold: 0.70
+novel_anomaly_confidence_threshold: 0.65
+
+weights:
+  vision_stream: 0.50
+  geometry_stream: 0.50

@@ -1,0 +1,10 @@
+# Calibration method and target FPR budget.
+
+temperature_scaling:
+  enabled: true
+  learning_rate: 0.01
+  max_iterations: 50
+
+fpr_budget:
+  target_fpr: 0.01 # 1% false positive rate allowance
+  evaluation_percentile: 99.0

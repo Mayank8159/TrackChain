@@ -1,0 +1,24 @@
+# Python project metadata and dependencies for the ML package.
+
+[project]
+name = "trackchain-ml"
+version = "0.1.0"
+description = "Two-stream Vision and EN 13848 Physics Geometry ML package for TrackChain."
+authors = [{ name = "TrackChain ML Team" }]
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.2.0",
+    "torchvision>=0.17.0",
+    "ultralytics>=8.1.0",
+    "scikit-learn>=1.4.0",
+    "scipy>=1.12.0",
+    "numpy>=1.26.0",
+    "pandas>=2.2.0",
+    "pyyaml>=6.0.1",
+    "opencv-python-headless>=4.9.0",
+    "tqdm>=4.66.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

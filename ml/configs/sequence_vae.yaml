@@ -1,0 +1,11 @@
+# Sequence VAE architecture and training settings.
+
+input_dim: 6
+hidden_dim: 32
+latent_dim: 8
+sequence_length: 100
+kl_weight: 0.01
+learning_rate: 0.001
+epochs: 25
+batch_size: 32
+reconstruction_loss: "mse"

@@ -1,0 +1,16 @@
+# YOLO detector hyperparameters and class list.
+
+model_type: "yolov8n.pt"
+input_size: [640, 640]
+epochs: 50
+batch_size: 16
+learning_rate: 0.001
+confidence_threshold: 0.45
+iou_threshold: 0.50
+
+classes:
+  - crack
+  - spalling
+  - missing_fastener
+  - squat
+  - rail_burn
