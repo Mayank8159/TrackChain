@@ -1,34 +1,41 @@
-# Unit tests for rule fusion and persistence.
+# Unit tests for multi-sensor fusion and persistence rules (tc.v1).
 
+import pytest
 from ml.fusion.rules import PersistenceRuleFusion
 from ml.core.schema import CalibratedSignal, DecisionType, DefectClass
 
 
-def test_rule_fusion_nominal():
+def test_nominal_signals_fuse_to_ok():
     fusion = PersistenceRuleFusion(persistence_window=1)
     signals = [
-        CalibratedSignal(
-            stream_name="vision_detector",
-            raw_score=0.1,
-            calibrated_prob=0.1,
-            is_anomaly=False,
-        )
+        CalibratedSignal("vision_detector", raw_score=0.1, calibrated_prob=0.05, is_anomaly=False),
+        CalibratedSignal("geometry_lstm", raw_score=0.2, calibrated_prob=0.10, is_anomaly=False),
     ]
-    decision = fusion.fuse("win-1", 0.0, 25.0, signals)
+    decision = fusion.fuse(
+        window_id="w-001",
+        start_chainage_m=100.0,
+        end_chainage_m=102.0,
+        signals=signals,
+    )
     assert decision.decision == DecisionType.OK
 
 
-def test_rule_fusion_known_fault():
+def test_known_defect_fuses_to_inspect_known():
     fusion = PersistenceRuleFusion(persistence_window=1)
     signals = [
         CalibratedSignal(
-            stream_name="vision_detector",
-            raw_score=0.9,
-            calibrated_prob=0.92,
-            predicted_class=DefectClass.CRACK,
+            "vision_detector",
+            raw_score=0.95,
+            calibrated_prob=0.91,
+            predicted_class=DefectClass.MISSING_FASTENER,
             is_anomaly=True,
-        )
+        ),
     ]
-    decision = fusion.fuse("win-2", 25.0, 50.0, signals)
-    assert decision.decision == DecisionType.KNOWN
-    assert decision.primary_fault == DefectClass.CRACK
+    decision = fusion.fuse(
+        window_id="w-002",
+        start_chainage_m=102.0,
+        end_chainage_m=104.0,
+        signals=signals,
+    )
+    assert decision.decision == DecisionType.INSPECT_KNOWN
+    assert decision.primary_fault == DefectClass.MISSING_FASTENER

@@ -1,4 +1,4 @@
-# Rule-based fusion over calibrated signals with persistence (OK/KNOWN/NOVEL).
+# Rule-based fusion over calibrated signals with persistence (OK/INSPECT_KNOWN/INSPECT_NOVEL).
 
 from typing import List, Optional
 from collections import deque
@@ -31,7 +31,7 @@ class PersistenceRuleFusion:
         end_chainage_m: float,
         signals: List[CalibratedSignal],
     ) -> SegmentDecision:
-        """Apply rule cascade to output OK, KNOWN, or NOVEL decisions."""
+        """Apply rule cascade to output OK, INSPECT_KNOWN, or INSPECT_NOVEL decisions."""
         has_known_fault = False
         has_novel_anomaly = False
         highest_conf = 0.0
@@ -54,9 +54,9 @@ class PersistenceRuleFusion:
 
         # Rule evaluation
         if has_known_fault:
-            decision = DecisionType.KNOWN
+            decision = DecisionType.INSPECT_KNOWN
         elif has_novel_anomaly:
-            decision = DecisionType.NOVEL
+            decision = DecisionType.INSPECT_NOVEL
         else:
             decision = DecisionType.OK
             highest_conf = 0.98

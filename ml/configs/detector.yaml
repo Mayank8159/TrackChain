@@ -1,16 +1,52 @@
-# YOLO detector hyperparameters and class list.
+# YOLOv8n detector hyperparameters, focal loss, augmentations, and domain classes (tc.v1).
 
-model_type: "yolov8n.pt"
-input_size: [640, 640]
-epochs: 50
-batch_size: 16
-learning_rate: 0.001
-confidence_threshold: 0.45
-iou_threshold: 0.50
+model:
+  name: "yolov8n.pt"
+  architecture: "CSPDarknet-C2f-DecoupledHead"
+  input_size: [640, 640]
+  confidence_threshold: 0.45
+  iou_threshold: 0.50
+  max_detections: 100
+
+training:
+  epochs: 100
+  batch_size: 16
+  optimizer: "AdamW"
+  lr0: 0.001
+  lrf: 0.01
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  cos_lr: true
+  close_mosaic: 10
+  focal_loss_gamma: 1.5
+
+augmentations:
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 5.0
+  translate: 0.1
+  scale: 0.5
+  shear: 2.0
+  perspective: 0.0001
+  flipud: 0.0
+  fliplr: 0.5
+  mosaic: 1.0
+  mixup: 0.1
+  cutout: 0.1
+  motion_blur_prob: 0.2
+
+sahi:
+  enabled: false
+  slice_height: 320
+  slice_width: 320
+  overlap_height_ratio: 0.2
+  overlap_width_ratio: 0.2
 
 classes:
-  - crack
-  - spalling
-  - missing_fastener
-  - squat
-  - rail_burn
+  0: "missing_fastener"
+  1: "defective_clip"
+  2: "crack"
+  3: "obstruction"
+  4: "spalling"
+  5: "squat"
