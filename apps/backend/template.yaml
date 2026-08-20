@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: ITMS Backend — Frame Processor Lambda
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1024
+
+Resources:
+  ProcessFrameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Architectures:
+        - x86_64
+      Events:
+        ProcessFrame:
+          Type: Api
+          Properties:
+            Path: /process-frame
+            Method: post
+        Health:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: get
+
+Outputs:
+  ProcessFrameApi:
+    Description: API Gateway endpoint URL for ProcessFrame
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/process-frame"
+  FunctionArn:
+    Description: ProcessFrame Lambda ARN
+    Value: !GetAtt ProcessFrameFunction.Arn

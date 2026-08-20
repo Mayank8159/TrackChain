@@ -1,0 +1,8 @@
+version = 0.1
+
+[default.build.parameters]
+use_container = true
+docker_network = "host"
+
+[default.local_invoke.parameters]
+env_vars = "env.json"
