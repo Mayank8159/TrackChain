@@ -1,4 +1,7 @@
-/* Global styles and Mission Control design system tokens for TrackChain (tc.v1). */
+/* =============================================================================
+   TrackChain Holographic SCADA Design System — Prompt 21 (tc.holo.v1)
+   Premium dark glassmorphic command-center aesthetic. Supersedes flat SCADA.
+   ============================================================================= */
 
 @tailwind base;
 @tailwind components;
@@ -6,139 +9,304 @@
 
 @layer base {
   :root {
-    --background: 222 47% 11%;
+    /* Legacy HSL tokens (preserved for compatibility) */
+    --background: 222 47% 4%;
     --foreground: 210 40% 98%;
-    --card: 217 33% 17%;
+    --card: 217 33% 8%;
     --card-foreground: 210 40% 98%;
-    --border: 215 25% 27%;
-    --ring: 217 91% 60%;
+    --border: 215 25% 15%;
+    --ring: 189 96% 43%;
     --radius-card: 10px;
     --radius-control: 6px;
+
+    /* ── Holographic Glass Surface Tokens ── */
+    --glass-bg: rgba(15, 23, 42, 0.60);          /* card: slate-900/60 */
+    --glass-bg-heavy: rgba(2, 6, 23, 0.82);       /* modal/sheet: slate-950/82 */
+    --glass-blur: blur(20px);
+    --glass-blur-heavy: blur(32px);
+    --glass-border: rgba(255, 255, 255, 0.05);
+    --glass-highlight: 0 1px 0 0 rgba(255, 255, 255, 0.06); /* top-edge glint */
+    --glass-shadow: 0 8px 40px -8px rgba(0, 0, 0, 0.7);
+
+    /* ── Neon Glow Tokens ── */
+    --glow-cyan: rgba(6, 182, 212, 0.35);
+    --glow-cyan-bright: rgba(6, 182, 212, 0.55);
+    --glow-blue: rgba(59, 130, 246, 0.35);
+    --glow-red: rgba(239, 68, 68, 0.45);
+    --glow-amber: rgba(245, 158, 11, 0.40);
+    --glow-green: rgba(16, 185, 129, 0.40);
   }
 
+  /* ─── The Void: Deepest Navy App Background ─── */
   body {
-    background-color: #0F172A;
+    background-color: #020617; /* Slate 950 — The Void */
     color: #F1F5F9;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum";
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: tabular-nums; /* Tabular nums: no jitter on live counters */
+
+    /* ── Aurora Atmosphere: Two massive blurred radial orbs ── */
+    background-image:
+      radial-gradient(circle at 10% 20%, rgba(6, 182, 212, 0.08) 0%, transparent 42%),
+      radial-gradient(circle at 90% 80%, rgba(79, 70, 229, 0.07) 0%, transparent 42%);
+    background-attachment: fixed;
   }
 
-  /* Accessible focus ring for all interactive elements */
+  /* Accessible focus ring — cyan glow against the void */
   :focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px #0F172A, 0 0 0 4px #3B82F6;
+    box-shadow: 0 0 0 2px #020617, 0 0 0 4px #06B6D4;
   }
 
   /* Custom high-contrast dark scrollbar */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: #0F172A;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: #334155;
-    border-radius: 3px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #475569;
-  }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: #020617; }
+  ::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #334155; }
 }
 
 @layer components {
-  /* Mission Control Dense Surface Card */
-  .scada-card {
-    background-color: #1E293B;
-    border: 1px solid #334155;
+
+  /* =========================================================================
+     THE GLASS: Holographic surface primitives
+     ========================================================================= */
+
+  /* Primary glass card surface */
+  .glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
     border-radius: 10px;
-    box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--glass-highlight), var(--glass-shadow);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .glass-card:hover {
+    border-color: rgba(255, 255, 255, 0.09);
+    box-shadow: var(--glass-highlight), 0 12px 48px -8px rgba(0, 0, 0, 0.8);
+  }
+
+  /* Heavy glass for modals, sheets — sits above the aurora */
+  .glass-heavy {
+    background: var(--glass-bg-heavy);
+    backdrop-filter: var(--glass-blur-heavy);
+    -webkit-backdrop-filter: var(--glass-blur-heavy);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 24px 80px -12px rgba(0, 0, 0, 0.9);
+  }
+
+  /* ─── Legacy .scada-card — upgraded to glass ─── */
+  .scada-card {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    box-shadow: var(--glass-highlight), var(--glass-shadow);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .scada-card:hover {
+    border-color: rgba(255, 255, 255, 0.09);
   }
 
   .scada-card-header {
-    background-color: #151E32;
-    border-bottom: 1px solid #334155;
+    background: rgba(2, 6, 23, 0.50);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     padding: 0.75rem 1rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
   }
 
-  /* Glowing Dividers */
-  .glow-line {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.3) 30%, rgba(59, 130, 246, 0.6) 50%, rgba(59, 130, 246, 0.3) 70%, transparent);
+  /* =========================================================================
+     THE GRID: Engineering dot-matrix overlay (applied to AppShell main)
+     ========================================================================= */
+  .holo-grid {
+    background-image: radial-gradient(rgba(148, 163, 184, 0.055) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 
+  /* =========================================================================
+     THE NEON: Glow lines and dividers
+     ========================================================================= */
+  .glow-line {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.3) 30%, rgba(6, 182, 212, 0.6) 50%, rgba(6, 182, 212, 0.3) 70%, transparent);
+  }
   .glow-line-amber {
     height: 1px;
     background: linear-gradient(90deg, transparent, rgba(245, 158, 11, 0.3) 30%, rgba(245, 158, 11, 0.6) 50%, rgba(245, 158, 11, 0.3) 70%, transparent);
   }
 
-  /* Specialized Badge Classes */
-  .badge-cyan {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium;
-    background: rgba(0, 240, 255, 0.1);
-    color: #00F0FF;
-    border: 1px solid rgba(0, 240, 255, 0.3);
+  /* =========================================================================
+     THE SHEEN: Holographic sweep effect on hover (KPI Cards etc.)
+     ========================================================================= */
+  .holo-sheen {
+    position: relative;
+    overflow: hidden;
+  }
+  .holo-sheen::after {
+    content: "";
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(
+      to bottom right,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.07) 50%,
+      rgba(255, 255, 255, 0) 100%
+    );
+    transform: rotate(45deg) translateX(-100%);
+    transition: transform 0.55s ease;
+    pointer-events: none;
+  }
+  .holo-sheen:hover::after {
+    transform: rotate(45deg) translateX(100%);
   }
 
+  /* =========================================================================
+     BADGES
+     ========================================================================= */
+  .badge-cyan {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium;
+    background: rgba(6, 182, 212, 0.12);
+    color: #22D3EE;
+    border: 1px solid rgba(6, 182, 212, 0.30);
+    box-shadow: 0 0 8px rgba(6, 182, 212, 0.15);
+  }
   .badge-green {
     @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium;
     background: rgba(16, 185, 129, 0.12);
     color: #10B981;
-    border: 1px solid rgba(16, 185, 129, 0.35);
+    border: 1px solid rgba(16, 185, 129, 0.30);
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.15);
   }
-
   .badge-amber {
     @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium;
     background: rgba(245, 158, 11, 0.12);
     color: #F59E0B;
-    border: 1px solid rgba(245, 158, 11, 0.35);
+    border: 1px solid rgba(245, 158, 11, 0.30);
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.15);
   }
-
   .badge-red {
     @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium;
     background: rgba(239, 68, 68, 0.12);
     color: #EF4444;
-    border: 1px solid rgba(239, 68, 68, 0.35);
+    border: 1px solid rgba(239, 68, 68, 0.30);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.15);
   }
 
-  /* Grid overlay for video / canvas */
+  /* =========================================================================
+     DATA GRID: Canvas / video overlays
+     ========================================================================= */
   .scada-grid {
     background-size: 20px 20px;
-    background-image: 
-      linear-gradient(to right, rgba(51, 65, 85, 0.35) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(51, 65, 85, 0.35) 1px, transparent 1px);
+    background-image:
+      linear-gradient(to right, rgba(51, 65, 85, 0.20) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(51, 65, 85, 0.20) 1px, transparent 1px);
   }
 
-  /* Leaflet Map Dark Theme Overrides */
+  /* =========================================================================
+     LEAFLET MAP: Dark + vignette + glass popups
+     ========================================================================= */
   .leaflet-container {
-    background-color: #0B1120 !important;
+    background-color: #050c1a !important;
     font-family: inherit;
   }
-
+  /* Map edge vignette — blends the map into the glass card */
+  .leaflet-map-vignette {
+    box-shadow: inset 0 0 60px 20px rgba(2, 6, 23, 0.85);
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 400;
+    border-radius: inherit;
+  }
   .leaflet-tooltip {
     background-color: transparent !important;
     border: none !important;
     box-shadow: none !important;
     padding: 0 !important;
   }
-
   .leaflet-tooltip-top:before,
   .leaflet-tooltip-bottom:before,
   .leaflet-tooltip-left:before,
   .leaflet-tooltip-right:before {
     display: none !important;
   }
-
   .scada-defect-pin {
     background: transparent !important;
     border: none !important;
   }
+  /* Glass popup override for Leaflet popups */
+  .leaflet-popup-content-wrapper {
+    background: rgba(2, 6, 23, 0.90) !important;
+    backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(6, 182, 212, 0.25) !important;
+    color: #F1F5F9 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7) !important;
+  }
+  .leaflet-popup-tip {
+    background: rgba(2, 6, 23, 0.90) !important;
+  }
+
+  /* =========================================================================
+     RECHARTS: Dark holographic chart theme
+     ========================================================================= */
+  .recharts-tooltip-wrapper {
+    filter: none !important;
+  }
+  /* Custom glass tooltip applied via className on <Tooltip> */
+  .holo-chart-tooltip {
+    background: rgba(2, 6, 23, 0.92) !important;
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(6, 182, 212, 0.30) !important;
+    border-radius: 8px !important;
+    padding: 8px 12px !important;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #CBD5E1;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+  }
+
+  /* =========================================================================
+     SOLID MODE ACCESSIBILITY ESCAPE HATCH
+     When [data-theme="solid"] is set on <html>, all glass becomes opaque.
+     ========================================================================= */
+  [data-theme="solid"] {
+    --glass-bg: rgb(15 23 42 / 1);
+    --glass-bg-heavy: rgb(2 6 23 / 1);
+    --glass-blur: blur(0px);
+    --glass-blur-heavy: blur(0px);
+  }
+  [data-theme="solid"] .scada-card,
+  [data-theme="solid"] .glass-card,
+  [data-theme="solid"] .glass-heavy {
+    background-color: #0F172A !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  [data-theme="solid"] .holo-sheen::after {
+    display: none;
+  }
+
+  /* ─── Aurora drift animation (motion-safe only) ─── */
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes aurora-drift {
+      0%, 100% { background-position: 0% 0%, 100% 100%; }
+      50% { background-position: 5% 5%, 95% 95%; }
+    }
+    body {
+      animation: aurora-drift 25s ease-in-out infinite;
+    }
+  }
 }
 
-/* Accessibility & Reduced Motion Foundations */
+/* =============================================================================
+   ACCESSIBILITY & REDUCED MOTION (Global gate — must be last)
+   ============================================================================= */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -148,10 +316,12 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-
   .animate-pulse,
   .animate-spin,
   .animate-ping {
     animation: none !important;
+  }
+  .holo-sheen::after {
+    display: none !important;
   }
 }

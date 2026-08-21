@@ -1,4 +1,4 @@
-// Mission Control AppShell wrapping Sidebar, Header, and independently scrollable main workspace (tc.v1).
+// Holographic SCADA AppShell — dot-grid atmosphere + glass panels (tc.holo.v1).
 
 "use client";
 
@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [toggleSidebar]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-scada-bg text-scada-text">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#020617] text-slate-100">
       {/* 1. Desktop & Mobile Navigation Sidebar */}
       <Sidebar />
 
@@ -36,11 +36,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Global Mode & Connectivity Banner (DEMO / REAL ERROR) */}
         <ModeBanner />
 
-        {/* Independently scrollable main content viewport */}
+        {/* Independently scrollable main content viewport — with holographic dot-grid */}
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 overflow-y-auto overflow-x-hidden focus:outline-none"
+          className="flex-1 overflow-y-auto overflow-x-hidden focus:outline-none holo-grid"
         >
           {children}
         </main>
