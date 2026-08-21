@@ -1,312 +1,474 @@
-// Defects table + filters; links each defect to evidence image and video offset.
+// Defect Register & URL-synced triage table with slide-in Evidence Drawer (tc.v1).
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Header } from "@/components/Header";
+import {
+  Search,
+  Filter,
+  CheckCircle2,
+  XCircle,
+  Eye,
+  SlidersHorizontal,
+  Download,
+  AlertTriangle,
+  RotateCcw,
+} from "lucide-react";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { StatBadge } from "@/components/ui/StatBadge";
-import { DefectTimeline } from "@/components/charts/DefectTimeline";
-import type { DefectEvent, SeverityLevel, DefectClass } from "@/lib/types";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
+import { SeverityBadge } from "@/components/ui/SeverityBadge";
+import { EvidenceDrawer } from "@/components/defects/EvidenceDrawer";
+import { useDefects } from "@/hooks/useDefects";
+import { useExport } from "@/hooks/useExport";
+import { useToast } from "@/components/ui/Toast";
+import { formatChainage, formatTimestamp, formatConfidence } from "@/lib/format";
+import type { DefectEvent } from "@/lib/types";
 
-const INITIAL_DEFECTS: DefectEvent[] = [
-  {
-    id: "DEF-001",
-    sessionId: "SES-20260821-01",
-    timestamp: "2026-08-21T00:15:32Z",
-    chainageM: 3420,
-    defectClass: "crack",
-    severity: "critical",
-    confidence: 0.94,
-    streamSource: "vision",
-    videoTimestampSec: 142.5,
-    description: "Transverse rail head crack on right rail running surface",
-    status: "open",
-    coordinates: { lat: 28.592, lng: 77.248 },
-  },
-  {
-    id: "DEF-002",
-    sessionId: "SES-20260821-01",
-    timestamp: "2026-08-21T00:18:10Z",
-    chainageM: 7850,
-    defectClass: "gauge_widening",
-    severity: "high",
-    confidence: 0.89,
-    streamSource: "geometry",
-    videoTimestampSec: 320.0,
-    description: "Track gauge measured at 1448mm (+13mm above standard 1435mm)",
-    status: "open",
-    coordinates: { lat: 28.561, lng: 77.265 },
-  },
-  {
-    id: "DEF-003",
-    sessionId: "SES-20260821-01",
-    timestamp: "2026-08-21T00:22:45Z",
-    chainageM: 12100,
-    defectClass: "missing_fastener",
-    severity: "medium",
-    confidence: 0.96,
-    streamSource: "vision",
-    videoTimestampSec: 495.2,
-    description: "Missing Pandrol clip fastener on sleeper #482",
-    status: "acknowledged",
-    coordinates: { lat: 28.528, lng: 77.289 },
-  },
-  {
-    id: "DEF-004",
-    sessionId: "SES-20260821-01",
-    timestamp: "2026-08-21T00:26:12Z",
-    chainageM: 16400,
-    defectClass: "spalling",
-    severity: "high",
-    confidence: 0.88,
-    streamSource: "fused",
-    videoTimestampSec: 670.8,
-    description: "Surface spalling with localized high-frequency vertical acceleration",
-    status: "open",
-    coordinates: { lat: 28.495, lng: 77.302 },
-  },
-  {
-    id: "DEF-005",
-    sessionId: "SES-20260821-01",
-    timestamp: "2026-08-21T00:31:05Z",
-    chainageM: 21950,
-    defectClass: "twist_exceedance",
-    severity: "critical",
-    confidence: 0.92,
-    streamSource: "geometry",
-    videoTimestampSec: 890.4,
-    description: "EN 13848-1 track twist rate exceeded: 4.2mm/m over 3m base",
-    status: "open",
-    coordinates: { lat: 28.452, lng: 77.319 },
-  },
-];
+function DefectRegistryContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-export default function DefectsPage() {
-  const [defects] = useState<DefectEvent[]>(INITIAL_DEFECTS);
-  const [severityFilter, setSeverityFilter] = useState<string>("all");
-  const [sourceFilter, setSourceFilter] = useState<string>("all");
-  const [selectedDefect, setSelectedDefect] = useState<DefectEvent | null>(
-    INITIAL_DEFECTS[0]
-  );
+  // URL-synced filter parameters
+  const initialSeverity = searchParams?.get("severity") || "all";
+  const initialClass = searchParams?.get("class") || "all";
+  const initialSource = searchParams?.get("source") || "all";
+  const initialSearch = searchParams?.get("q") || "";
 
-  const filteredDefects = defects.filter((d) => {
-    if (severityFilter !== "all" && d.severity !== severityFilter) return false;
-    if (sourceFilter !== "all" && d.streamSource !== sourceFilter) return false;
-    return true;
-  });
+  const [severityFilter, setSeverityFilter] = useState<string>(initialSeverity);
+  const [classFilter, setClassFilter] = useState<string>(initialClass);
+  const [sourceFilter, setSourceFilter] = useState<string>(initialSource);
+  const [searchQuery, setSearchQuery] = useState<string>(initialSearch);
+
+  const { defects: initialDefects = [], isDemoData } = useDefects();
+  const [defectsList, setDefectsList] = useState<DefectEvent[]>(initialDefects);
+  const { exportDefectsCSV } = useExport();
+  const { showToast } = useToast();
+
+  const [selectedDrawerDefect, setSelectedDrawerDefect] = useState<DefectEvent | null>(null);
+  const [isMutating, setIsMutating] = useState<boolean>(false);
+
+  // Sync defects if query data updates
+  useEffect(() => {
+    if (initialDefects.length > 0 && defectsList.length === 0) {
+      setDefectsList(initialDefects);
+    }
+  }, [initialDefects, defectsList.length]);
+
+  // Push updated filter state to URL query params
+  const updateUrlParams = (key: string, value: string) => {
+    const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+    if (value === "all" || !value) {
+      params.delete(key);
+    } else {
+      params.set(key, value);
+    }
+    router.replace(`/defects?${params.toString()}`, { scroll: false });
+  };
+
+  const handleSeverityChange = (val: string) => {
+    setSeverityFilter(val);
+    updateUrlParams("severity", val);
+  };
+
+  const handleClassChange = (val: string) => {
+    setClassFilter(val);
+    updateUrlParams("class", val);
+  };
+
+  const handleSourceChange = (val: string) => {
+    setSourceFilter(val);
+    updateUrlParams("source", val);
+  };
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    updateUrlParams("q", val);
+  };
+
+  const defects = defectsList.length > 0 ? defectsList : initialDefects;
+
+  // Filtered defects calculation
+  const filteredDefects = useMemo(() => {
+    return defects.filter((d) => {
+      if (severityFilter !== "all" && d.severity !== severityFilter) return false;
+      if (classFilter !== "all" && d.defectClass !== classFilter) return false;
+      if (sourceFilter !== "all" && d.streamSource !== sourceFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchId = d.id.toLowerCase().includes(q);
+        const matchClass = d.defectClass.toLowerCase().includes(q);
+        const matchDesc = d.description?.toLowerCase().includes(q);
+        if (!matchId && !matchClass && !matchDesc) return false;
+      }
+      return true;
+    });
+  }, [defects, severityFilter, classFilter, sourceFilter, searchQuery]);
+
+  // Human-in-the-loop optimistic mutations
+  const handleAcknowledgeDefect = (defect: DefectEvent) => {
+    setIsMutating(true);
+    setDefectsList((prev) =>
+      prev.map((d) =>
+        d.id === defect.id
+          ? {
+              ...d,
+              status: "acknowledged",
+              acknowledgedBy: "Chief Track Inspector",
+              acknowledgedAt: new Date().toISOString(),
+            }
+          : d
+      )
+    );
+    if (selectedDrawerDefect?.id === defect.id) {
+      setSelectedDrawerDefect((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "acknowledged",
+              acknowledgedBy: "Chief Track Inspector",
+              acknowledgedAt: new Date().toISOString(),
+            }
+          : null
+      );
+    }
+    setIsMutating(false);
+    showToast({
+      type: "success",
+      title: "Defect Acknowledged",
+      description: `Incident ${defect.id} marked as verified & acknowledged by inspector.`,
+    });
+  };
+
+  const handleRejectDefect = (defect: DefectEvent) => {
+    setIsMutating(true);
+    setDefectsList((prev) =>
+      prev.map((d) =>
+        d.id === defect.id ? { ...d, status: "false_positive" } : d
+      )
+    );
+    if (selectedDrawerDefect?.id === defect.id) {
+      setSelectedDrawerDefect((prev) =>
+        prev ? { ...prev, status: "false_positive" } : null
+      );
+    }
+    setIsMutating(false);
+    showToast({
+      type: "warning",
+      title: "False Positive Dismissed",
+      description: `Defect ${defect.id} marked as false positive. Feedback sample queued for model retraining.`,
+    });
+  };
+
+  const handleAssignCrew = (defect: DefectEvent) => {
+    showToast({
+      type: "info",
+      title: "Maintenance Crew Assigned",
+      description: `Dispatched work order to PWL Section Gang #4 for ${formatChainage(defect.chainageM)}.`,
+    });
+  };
+
+  const criticalCount = defects.filter((d) => d.severity === "critical" && d.status !== "false_positive").length;
+  const highCount = defects.filter((d) => d.severity === "high" && d.status !== "false_positive").length;
+  const ackCount = defects.filter((d) => d.status === "acknowledged").length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-scada-bg text-scada-text font-sans">
-      <Header />
-      <div className="glow-line" />
-
-      <main className="flex-1 p-4 lg:p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full">
-        {/* Page Title & KPI Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold font-mono tracking-wider text-scada-text uppercase">
-              Track Defect Intelligence Registry
-            </h1>
-            <p className="text-xs font-mono text-scada-muted">
-              Section: Northern Railway Zone — NDLS to PWL (Down Main Line)
-            </p>
+    <div className="p-4 lg:p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full">
+      {/* 1. Page Header */}
+      <PageHeader
+        title="Track Defect Intelligence Register"
+        description="High-density triage matrix for optical AI detections and EN 13848 geometry anomalies"
+        breadcrumbs={[{ label: "Defects" }]}
+        actions={
+          <div className="flex items-center gap-2.5">
+            <Button
+              variant="outline"
+              size="md"
+              onClick={() => exportDefectsCSV(filteredDefects)}
+            >
+              <Download size={14} className="mr-1.5" />
+              Export CSV
+            </Button>
           </div>
+        }
+      />
 
-          <div className="flex items-center gap-3">
-            <StatBadge severity="critical">
-              {defects.filter((d) => d.severity === "critical").length} CRITICAL
-            </StatBadge>
-            <StatBadge severity="high">
-              {defects.filter((d) => d.severity === "high").length} HIGH
-            </StatBadge>
-            <StatBadge severity="medium">
-              {defects.filter((d) => d.severity === "medium").length} MEDIUM
-            </StatBadge>
-          </div>
+      {/* 2. Top Summary KPI Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="scada-card p-4 border border-scada-border">
+          <h4 className="text-xs font-mono font-bold uppercase text-scada-muted">
+            Total Flagged Defects
+          </h4>
+          <p className="text-2xl font-mono font-bold text-white mt-1">
+            {defects.length} <span className="text-xs text-scada-muted">items</span>
+          </p>
+          <p className="text-[10px] font-mono text-scada-muted mt-1">
+            Northern Railway Mainline
+          </p>
         </div>
 
-        {/* Timeline Chart */}
-        <Card title="Defect Distribution along Track Chainage">
-          <DefectTimeline defects={defects} maxChainageKm={25} />
-        </Card>
+        <div className="scada-card p-4 border border-scada-border">
+          <h4 className="text-xs font-mono font-bold uppercase text-scada-muted">
+            Critical Action (IAL)
+          </h4>
+          <p className="text-2xl font-mono font-bold text-red-400 mt-1">
+            {criticalCount} <span className="text-xs text-scada-muted">urgent</span>
+          </p>
+          <p className="text-[10px] font-mono text-scada-muted mt-1">
+            Requires Speed Restriction
+          </p>
+        </div>
 
-        {/* Filters & Main Split */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Defect Table (2 cols) */}
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-scada-panel p-3 rounded-lg border border-scada-border">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-scada-muted">Severity:</span>
-                {(["all", "critical", "high", "medium"] as const).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSeverityFilter(s)}
-                    className={`px-2.5 py-1 rounded text-[10px] font-mono uppercase transition ${
-                      severityFilter === s
-                        ? "bg-scada-cyan/20 text-scada-cyan border border-scada-cyan/40"
-                        : "text-scada-muted hover:text-scada-text"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
+        <div className="scada-card p-4 border border-scada-border">
+          <h4 className="text-xs font-mono font-bold uppercase text-scada-muted">
+            High Severity
+          </h4>
+          <p className="text-2xl font-mono font-bold text-amber-400 mt-1">
+            {highCount} <span className="text-xs text-scada-muted">faults</span>
+          </p>
+          <p className="text-[10px] font-mono text-scada-muted mt-1">
+            Scheduled Maintenance
+          </p>
+        </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-scada-muted">Source:</span>
-                {(["all", "vision", "geometry", "fused"] as const).map((src) => (
-                  <button
-                    key={src}
-                    onClick={() => setSourceFilter(src)}
-                    className={`px-2.5 py-1 rounded text-[10px] font-mono uppercase transition ${
-                      sourceFilter === src
-                        ? "bg-scada-cyan/20 text-scada-cyan border border-scada-cyan/40"
-                        : "text-scada-muted hover:text-scada-text"
-                    }`}
-                  >
-                    {src}
-                  </button>
-                ))}
-              </div>
-            </div>
+        <div className="scada-card p-4 border border-scada-border">
+          <h4 className="text-xs font-mono font-bold uppercase text-scada-muted">
+            Operator Acknowledged
+          </h4>
+          <p className="text-2xl font-mono font-bold text-emerald-400 mt-1">
+            {ackCount} <span className="text-xs text-scada-muted">cleared</span>
+          </p>
+          <p className="text-[10px] font-mono text-scada-muted mt-1">
+            Human-in-the-Loop Verified
+          </p>
+        </div>
+      </div>
 
-            <div className="overflow-hidden rounded-lg border border-scada-border bg-scada-panel">
-              <table className="w-full text-left text-xs font-mono">
-                <thead className="border-b border-scada-border bg-scada-panel-header text-scada-muted uppercase text-[10px]">
-                  <tr>
-                    <th className="p-3">ID / Time</th>
-                    <th className="p-3">Chainage</th>
-                    <th className="p-3">Defect Class</th>
-                    <th className="p-3">Severity</th>
-                    <th className="p-3">Confidence</th>
-                    <th className="p-3">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-scada-border/60">
-                  {filteredDefects.map((d) => (
-                    <tr
-                      key={d.id}
-                      onClick={() => setSelectedDefect(d)}
-                      className={`cursor-pointer transition-colors ${
-                        selectedDefect?.id === d.id
-                          ? "bg-scada-cyan/10 border-l-2 border-scada-cyan"
-                          : "hover:bg-scada-panel-header/50"
-                      }`}
-                    >
-                      <td className="p-3">
-                        <div className="font-bold text-scada-text">{d.id}</div>
-                        <div className="text-[10px] text-scada-muted">
-                          {new Date(d.timestamp).toLocaleTimeString()}
-                        </div>
-                      </td>
-                      <td className="p-3 font-semibold text-scada-cyan">
-                        {(d.chainageM / 1000).toFixed(3)} km
-                      </td>
-                      <td className="p-3 uppercase text-scada-text">
-                        {d.defectClass.replace("_", " ")}
-                      </td>
-                      <td className="p-3">
-                        <StatBadge severity={d.severity}>
-                          {d.severity}
-                        </StatBadge>
-                      </td>
-                      <td className="p-3 text-scada-text">
-                        {(d.confidence * 100).toFixed(0)}%
-                      </td>
-                      <td className="p-3">
-                        <Link
-                          href={`/video?seek=${d.videoTimestampSec || 0}`}
-                          className="text-[10px] text-scada-cyan hover:underline"
-                        >
-                          View Video →
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      {/* 3. URL-Synced Filter Controls */}
+      <Card title="Defect Query & Triage Filters">
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-900/60 p-3 rounded-control border border-scada-border">
+            {/* Search Input */}
+            <Input
+              placeholder="Search by defect ID, keyword, or sleeper..."
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              icon={<Search size={14} />}
+            />
+
+            {/* Severity Multi-Pill Select */}
+            <Select
+              value={severityFilter}
+              onChange={(e) => handleSeverityChange(e.target.value)}
+              icon={<Filter size={13} />}
+            >
+              <option value="all">All Severities</option>
+              <option value="critical">Critical (IAL)</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </Select>
+
+            {/* Defect Class Dropdown */}
+            <Select
+              value={classFilter}
+              onChange={(e) => handleClassChange(e.target.value)}
+            >
+              <option value="all">All Defect Classes</option>
+              <option value="crack">Crack (Rail Head / Foot)</option>
+              <option value="gauge_widening">Gauge Widening</option>
+              <option value="missing_fastener">Missing Fastener</option>
+              <option value="spalling">Spalling & Wheel Burn</option>
+              <option value="twist_exceedance">Twist Exceedance</option>
+            </Select>
+
+            {/* Stream Source Dropdown */}
+            <Select
+              value={sourceFilter}
+              onChange={(e) => handleSourceChange(e.target.value)}
+            >
+              <option value="all">All Source Streams</option>
+              <option value="vision">Vision (YOLOv8)</option>
+              <option value="geometry">Geometry (IMU/Laser)</option>
+              <option value="fused">Fused Vision-Geometry</option>
+            </Select>
           </div>
 
-          {/* Defect Detail & Evidence Panel */}
-          <div className="flex flex-col gap-4">
-            <Card title="Defect Evidence & Diagnostics">
-              {selectedDefect ? (
-                <div className="flex flex-col gap-4 text-xs font-mono">
-                  <div className="flex items-center justify-between border-b border-scada-border pb-2">
-                    <span className="text-sm font-bold text-scada-text">
-                      {selectedDefect.id}
-                    </span>
-                    <StatBadge severity={selectedDefect.severity}>
-                      {selectedDefect.severity.toUpperCase()}
-                    </StatBadge>
-                  </div>
-
-                  {/* Simulated defect visual snapshot */}
-                  <div className="relative aspect-video w-full rounded border border-scada-border bg-black/60 flex items-center justify-center overflow-hidden">
-                    <div className="absolute inset-0 scada-grid opacity-40" />
-                    <div className="relative z-10 flex flex-col items-center gap-1 text-center p-4">
-                      <span className="h-3 w-3 rounded-full bg-scada-red animate-ping" />
-                      <span className="text-xs font-bold text-scada-text uppercase">
-                        {selectedDefect.defectClass.replace("_", " ")}
-                      </span>
-                      <span className="text-[10px] text-scada-muted">
-                        Frame Capture at Chainage {(selectedDefect.chainageM / 1000).toFixed(3)} km
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 bg-scada-panel-header p-3 rounded border border-scada-border">
-                    <div className="flex justify-between">
-                      <span className="text-scada-muted">Source Stream:</span>
-                      <span className="text-scada-cyan uppercase">{selectedDefect.streamSource}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-scada-muted">Video Offset:</span>
-                      <span className="text-scada-text">{selectedDefect.videoTimestampSec}s</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-scada-muted">Model Confidence:</span>
-                      <span className="text-scada-green">{(selectedDefect.confidence * 100).toFixed(1)}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-scada-muted">GPS Coords:</span>
-                      <span className="text-scada-text">
-                        {selectedDefect.coordinates?.lat.toFixed(3)}°N, {selectedDefect.coordinates?.lng.toFixed(3)}°E
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-scada-muted leading-relaxed">
-                    {selectedDefect.description}
-                  </p>
-
-                  <div className="flex gap-2 mt-2">
-                    <Link
-                      href={`/video?seek=${selectedDefect.videoTimestampSec || 0}`}
-                      className="flex-1 text-center py-2 rounded bg-scada-cyan/20 border border-scada-cyan text-scada-cyan hover:bg-scada-cyan/30 transition text-xs font-bold uppercase"
-                    >
-                      Play Synced Video
-                    </Link>
-                    <Link
-                      href="/map"
-                      className="flex-1 text-center py-2 rounded bg-scada-panel border border-scada-border hover:border-scada-border-bright text-scada-text transition text-xs font-bold uppercase"
-                    >
-                      Locate on Map
-                    </Link>
-                  </div>
-                </div>
-              ) : (
-                <div className="py-12 text-center text-xs font-mono text-scada-muted">
-                  Select a defect to inspect evidence
-                </div>
+          {/* Quick Active Filters Summary Bar */}
+          <div className="flex items-center justify-between text-xs font-mono text-scada-muted px-1">
+            <div className="flex items-center gap-2">
+              <span>Showing {filteredDefects.length} of {defects.length} defect records</span>
+              {(severityFilter !== "all" || classFilter !== "all" || sourceFilter !== "all" || searchQuery) && (
+                <button
+                  onClick={() => {
+                    setSeverityFilter("all");
+                    setClassFilter("all");
+                    setSourceFilter("all");
+                    setSearchQuery("");
+                    router.replace("/defects", { scroll: false });
+                  }}
+                  className="text-cyan-400 hover:underline flex items-center gap-1 font-semibold"
+                >
+                  <RotateCcw size={12} />
+                  Reset Filters
+                </button>
               )}
-            </Card>
+            </div>
+            <span>Click any row to open the Investigation Drawer</span>
+          </div>
+
+          {/* 4. High-Density Defect Data Table */}
+          <div className="relative w-full overflow-x-auto touch-pan-x overscroll-contain">
+            <div className="min-w-[900px]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Defect ID</TableHead>
+                    <TableHead>Chainage (KM)</TableHead>
+                    <TableHead>Defect Class</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Confidence</TableHead>
+                    <TableHead>Source Model</TableHead>
+                    <TableHead>Detected At</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredDefects.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="py-12 text-center text-scada-muted">
+                        No defects matching the selected criteria.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredDefects.map((defect) => {
+                      const isAck = defect.status === "acknowledged";
+                      const isDism = defect.status === "false_positive";
+
+                      return (
+                        <TableRow
+                          key={defect.id}
+                          onClick={() => setSelectedDrawerDefect(defect)}
+                          className={`cursor-pointer transition-colors ${
+                            isDism
+                              ? "opacity-50 line-through"
+                              : isAck
+                              ? "bg-emerald-950/10 hover:bg-emerald-950/20"
+                              : "hover:bg-slate-800/50"
+                          }`}
+                        >
+                          {/* Defect ID + Checkmark if Acknowledged */}
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {isAck && <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />}
+                              {isDism && <XCircle size={14} className="text-red-400 shrink-0" />}
+                              <div>
+                                <div className="font-mono font-bold text-white">{defect.id}</div>
+                                <div className="text-[10px] font-mono text-scada-muted">
+                                  {defect.sessionId}
+                                </div>
+                              </div>
+                            </div>
+                          </TableCell>
+
+                          {/* Chainage */}
+                          <TableCell className="font-mono font-semibold text-cyan-400">
+                            {formatChainage(defect.chainageM)}
+                          </TableCell>
+
+                          {/* Defect Class */}
+                          <TableCell className="uppercase font-mono text-scada-text font-bold">
+                            {defect.defectClass.replace("_", " ")}
+                          </TableCell>
+
+                          {/* Severity */}
+                          <TableCell>
+                            <SeverityBadge severity={defect.severity} size="sm" />
+                          </TableCell>
+
+                          {/* Confidence */}
+                          <TableCell className="font-mono text-emerald-400 font-semibold">
+                            {formatConfidence(defect.confidence)}
+                          </TableCell>
+
+                          {/* Source Model */}
+                          <TableCell className="font-mono text-xs text-slate-300">
+                            {defect.sourceModel || "YOLOv8-Detector"}
+                          </TableCell>
+
+                          {/* Detected Timestamp */}
+                          <TableCell className="text-[10px] font-mono text-scada-muted">
+                            {formatTimestamp(defect.timestamp)}
+                          </TableCell>
+
+                          {/* Status */}
+                          <TableCell>
+                            {isDism ? (
+                              <span className="badge-red text-[10px]">DISMISSED</span>
+                            ) : isAck ? (
+                              <span className="badge-green text-[10px]">ACKNOWLEDGED</span>
+                            ) : (
+                              <span className="badge-cyan text-[10px]">OPEN / UNVERIFIED</span>
+                            )}
+                          </TableCell>
+
+                          {/* Actions */}
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSelectedDrawerDefect(defect)}
+                                className="text-[10px]"
+                              >
+                                <Eye size={12} className="mr-1" />
+                                Inspect
+                              </Button>
+
+                              <Link
+                                href={`/sessions/${defect.sessionId || "ses-delhi-agra-001"}?seek=${defect.videoTimestampSec || 0}`}
+                              >
+                                <Button variant="primary" size="sm" className="text-[10px]">
+                                  Footage ▶
+                                </Button>
+                              </Link>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         </div>
-      </main>
+      </Card>
+
+      {/* 5. Slide-In Evidence Drawer */}
+      <EvidenceDrawer
+        defect={selectedDrawerDefect}
+        isOpen={!!selectedDrawerDefect}
+        onClose={() => setSelectedDrawerDefect(null)}
+        onAcknowledge={handleAcknowledgeDefect}
+        onReject={handleRejectDefect}
+        onAssign={handleAssignCrew}
+        isMutating={isMutating}
+      />
     </div>
+  );
+}
+
+export default function DefectsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center font-mono text-scada-muted">Loading Defect Intelligence Registry...</div>}>
+      <DefectRegistryContent />
+    </Suspense>
   );
 }
