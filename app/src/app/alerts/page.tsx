@@ -1,145 +1,220 @@
-// Alert center: safety-critical defects with acknowledge workflow.
+// Real-Time Live Safety Alert Center with SSE ingestion, audio cues, and triage actions (tc.v1).
 
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
-import { Header } from "@/components/Header";
+import {
+  Volume2,
+  VolumeX,
+  Radio,
+  Filter,
+  CheckCircle2,
+  ShieldCheck,
+  History,
+  AlertTriangle,
+} from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { SeverityBadge } from "@/components/defects/SeverityBadge";
+import { AlertCard } from "@/components/alerts/AlertCard";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useToast } from "@/components/ui/Toast";
-import { formatChainage, formatTimestamp } from "@/lib/format";
+import type { AlertEvent } from "@/lib/types";
 
 export default function AlertsPage() {
-  const { alerts, acknowledgeAlert } = useAlerts();
+  const {
+    alerts,
+    acknowledgeAlert,
+    escalateAlert,
+    muteClass,
+    snoozedClasses,
+    soundEnabled,
+    toggleSound,
+  } = useAlerts();
+
   const { showToast } = useToast();
-  const [filter, setFilter] = useState<"all" | "unacknowledged" | "acknowledged">(
-    "unacknowledged"
-  );
+  const [severityFilter, setSeverityFilter] = useState<string>("all");
 
   const filteredAlerts = alerts.filter((a) => {
-    if (filter === "unacknowledged") return !a.acknowledged;
-    if (filter === "acknowledged") return a.acknowledged;
+    if (severityFilter !== "all" && a.severity !== severityFilter) return false;
     return true;
   });
 
-  const unacknowledgedCount = alerts.filter((a) => !a.acknowledged).length;
+  const activeAlerts = filteredAlerts.filter((a) => !a.acknowledged);
+  const acknowledgedHistory = filteredAlerts.filter((a) => a.acknowledged);
 
-  const handleAcknowledge = (id: string) => {
-    acknowledgeAlert(id);
+  const handleAcknowledge = (alert: AlertEvent) => {
+    acknowledgeAlert(alert.id);
     showToast({
       type: "success",
       title: "Alert Acknowledged",
-      description: `Incident ${id} marked acknowledged by operator.`,
+      description: `Dispatched operator clearance for ${alert.defectClass.toUpperCase()} at ${(
+        alert.chainageM / 1000
+      ).toFixed(3)} km.`,
+    });
+  };
+
+  const handleEscalate = (alert: AlertEvent) => {
+    escalateAlert(alert.id);
+    showToast({
+      type: "warning",
+      title: "Incident Escalated",
+      description: `Dispatched priority SMS & PagerDuty webhook to Permanent Way Supervisor for ${alert.defectClass.toUpperCase()}.`,
+    });
+  };
+
+  const handleMute = (defectClass: string) => {
+    muteClass(defectClass);
+    showToast({
+      type: "info",
+      title: "Alarms Snoozed",
+      description: `Snoozed incoming real-time audio alarms for ${defectClass.replace(
+        "_",
+        " "
+      )} for 1 hour.`,
     });
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-scada-bg text-scada-text font-sans">
-      <Header />
-      <div className="glow-line" />
-
-      <main className="flex-1 p-4 lg:p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full">
-        <PageHeader
-          title="Critical Safety Alert Center"
-          description="High-priority track defects requiring emergency dispatch or speed restriction"
-          breadcrumbs={[{ label: "Alerts" }]}
-          actions={
-            <div className="flex items-center gap-3">
-              {unacknowledgedCount > 0 && (
-                <span className="badge-red animate-pulse">
-                  {unacknowledgedCount} PENDING ACTION
-                </span>
-              )}
+    <div className="p-4 lg:p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full">
+      {/* 1. Page Header with SSE Connection Status and Audio Toggle */}
+      <PageHeader
+        title="Live Safety Alert Center"
+        description="Immediate Action Limit (IAL) dispatch board with real-time SSE ingestion and audio triage"
+        breadcrumbs={[{ label: "Alerts" }]}
+        actions={
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Live SSE Link Indicator */}
+            <div className="flex items-center gap-1.5 rounded-control bg-slate-900 border border-scada-border px-3 py-1.5 font-mono text-xs text-scada-muted">
+              <Radio size={13} className="text-emerald-400 animate-pulse" />
+              <span>STREAM:</span>
+              <strong className="text-emerald-400">LIVE SSE</strong>
             </div>
-          }
-        />
 
-        {/* Filter buttons */}
-        <div className="flex gap-2 font-mono text-xs">
-          {(["unacknowledged", "all", "acknowledged"] as const).map((f) => (
+            {/* Audio Alert Toggle */}
+            <Button
+              variant={soundEnabled ? "primary" : "secondary"}
+              size="md"
+              onClick={toggleSound}
+              className="text-xs font-mono font-bold"
+              title={soundEnabled ? "Mute audio alarms" : "Enable browser audio alarms"}
+            >
+              {soundEnabled ? (
+                <>
+                  <Volume2 size={14} className="mr-1.5 text-white animate-pulse" />
+                  Sound: ON
+                </>
+              ) : (
+                <>
+                  <VolumeX size={14} className="mr-1.5 text-slate-400" />
+                  Sound: OFF
+                </>
+              )}
+            </Button>
+          </div>
+        }
+      />
+
+      {/* 2. Top Severity Filter Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-control border border-scada-border font-mono text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-scada-muted">Severity Filter:</span>
+          {(["all", "critical", "high", "medium"] as const).map((sev) => (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded uppercase font-bold transition ${
-                filter === f
-                  ? "bg-scada-cyan/20 text-scada-cyan border border-scada-cyan/40"
-                  : "bg-scada-panel text-scada-muted border border-scada-border hover:text-scada-text"
+              key={sev}
+              onClick={() => setSeverityFilter(sev)}
+              className={`px-3 py-1 rounded text-xs uppercase transition ${
+                severityFilter === sev
+                  ? "bg-scada-accent/20 text-scada-accent border border-scada-accent font-bold"
+                  : "bg-slate-800 text-scada-muted border border-scada-border hover:text-white"
               }`}
             >
-              {f} ({f === "all" ? alerts.length : alerts.filter((a) => f === "unacknowledged" ? !a.acknowledged : a.acknowledged).length})
+              {sev} (
+              {sev === "all"
+                ? alerts.length
+                : alerts.filter((a) => a.severity === sev).length}
+              )
             </button>
           ))}
         </div>
 
-        {/* Alert Cards List */}
-        <div className="space-y-4 font-mono">
-          {filteredAlerts.length === 0 ? (
-            <Card>
-              <div className="py-12 text-center text-xs text-scada-muted">
-                No alerts currently in this category. All clear!
-              </div>
-            </Card>
+        {snoozedClasses.length > 0 && (
+          <span className="text-[11px] text-amber-400 font-semibold">
+            Snoozed Alarm Classes: {snoozedClasses.join(", ")}
+          </span>
+        )}
+      </div>
+
+      {/* 3. Section 1: Active / Unacknowledged Alerts */}
+      <Card
+        title={`Pending Safety Incidents (${activeAlerts.length})`}
+        badge={
+          activeAlerts.length > 0 ? (
+            <span className="badge-red animate-pulse text-[10px]">
+              {activeAlerts.length} ACTION REQUIRED
+            </span>
           ) : (
-            filteredAlerts.map((alert) => (
-              <div
-                key={alert.id}
-                className={`rounded-lg border p-4 transition-all ${
-                  alert.acknowledged
-                    ? "border-scada-border bg-scada-panel opacity-70"
-                    : "border-scada-red/60 bg-scada-panel/90 shadow-lg shadow-scada-red/5"
-                }`}
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-scada-border pb-3">
-                  <div className="flex items-center gap-3">
-                    <SeverityBadge severity={alert.severity} />
-                    <span className="text-sm font-bold text-scada-text uppercase">
-                      {alert.defectClass.replace("_", " ")}
-                    </span>
-                    <span className="text-xs text-scada-cyan font-semibold">
-                      {formatChainage(alert.chainageM)}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-scada-muted">
-                    {formatTimestamp(alert.timestamp)}
-                  </span>
-                </div>
-
-                <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <p className="text-xs text-scada-muted leading-relaxed">
-                    {alert.message}
-                  </p>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    {!alert.acknowledged ? (
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleAcknowledge(alert.id)}
-                      >
-                        Acknowledge Alert
-                      </Button>
-                    ) : (
-                      <span className="text-[10px] text-scada-green flex items-center gap-1">
-                        ✓ Ack by {alert.acknowledgedBy || "Operator"}
-                      </span>
-                    )}
-
-                    <Link href={`/video?seek=0`}>
-                      <Button variant="outline" size="sm">
-                        View Footage →
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
+            <span className="badge-green text-[10px]">ALL CLEAR</span>
+          )
+        }
+      >
+        <div
+          className="space-y-4"
+          role="region"
+          aria-live="polite"
+          aria-label="Active safety alerts"
+        >
+          {activeAlerts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center font-mono">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 mb-3">
+                <ShieldCheck size={26} />
               </div>
+              <p className="text-sm font-bold text-white uppercase">
+                Track Corridor is Clear
+              </p>
+              <p className="text-xs text-scada-muted mt-1 max-w-md">
+                Zero unacknowledged Immediate Action Limit (IAL) defects active across Northern Railway NDLS-AGC mainline.
+              </p>
+            </div>
+          ) : (
+            activeAlerts.map((alert) => (
+              <AlertCard
+                key={alert.id}
+                alert={alert}
+                onAcknowledge={handleAcknowledge}
+                onEscalate={handleEscalate}
+                onMute={handleMute}
+              />
             ))
           )}
         </div>
-      </main>
+      </Card>
+
+      {/* 4. Section 2: Acknowledged Incident History */}
+      <Card
+        title={`Acknowledged Incident History (${acknowledgedHistory.length})`}
+        badge={
+          <span className="badge-cyan text-[10px]">
+            CLEARED LOG
+          </span>
+        }
+        actions={<History size={16} className="text-scada-muted" />}
+      >
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          {acknowledgedHistory.length === 0 ? (
+            <div className="py-8 text-center font-mono text-xs text-scada-muted">
+              No historical acknowledged incidents in current session.
+            </div>
+          ) : (
+            acknowledgedHistory.map((alert) => (
+              <AlertCard
+                key={alert.id}
+                alert={alert}
+              />
+            ))
+          )}
+        </div>
+      </Card>
     </div>
   );
 }
