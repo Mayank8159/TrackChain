@@ -1,35 +1,56 @@
-// Legend explaining marker colors and severity levels.
+// Map Legend component showing 5-tier severity and TQI track quality bands (tc.v1).
 
 import React from "react";
-import { SEVERITY_CONFIG } from "../../lib/constants";
-import type { SeverityLevel } from "../../lib/types";
+import { SEVERITY_CONFIG, CanonicalSeverity } from "../../lib/severity";
 
 export function MapLegend() {
-  const levels: SeverityLevel[] = ["critical", "high", "medium", "low", "normal"];
+  const severityKeys: CanonicalSeverity[] = ["critical", "high", "medium", "low", "ok"];
 
   return (
-    <div className="rounded-lg border border-scada-border bg-scada-panel/95 p-3 text-xs font-mono backdrop-blur shadow-xl">
-      <div className="font-bold text-[11px] uppercase tracking-wider text-scada-text mb-2 border-b border-scada-border pb-1">
-        Map Symbology & Fault Tiers
+    <div className="rounded-control border border-scada-border bg-slate-950/90 p-3 font-mono text-[11px] text-scada-text shadow-2xl backdrop-blur max-w-xs select-none">
+      <div className="font-bold text-white uppercase tracking-wider mb-2 border-b border-scada-border/60 pb-1">
+        Corridor GIS Legend
       </div>
-      <div className="flex flex-col gap-1.5">
-        {levels.map((lvl) => {
-          const cfg = SEVERITY_CONFIG[lvl];
-          return (
-            <div key={lvl} className="flex items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: cfg.color }}
-              />
-              <span className="text-[10px] text-scada-muted capitalize">
-                {cfg.label} Defect
-              </span>
-            </div>
-          );
-        })}
-        <div className="flex items-center gap-2 pt-1 border-t border-scada-border/60 mt-1">
-          <span className="h-1.5 w-4 bg-scada-cyan rounded" />
-          <span className="text-[10px] text-scada-muted">Track Corridor Polyline</span>
+
+      {/* 1. Track Quality Index (TQI) Segments */}
+      <div className="mb-2.5 space-y-1">
+        <span className="text-[10px] text-scada-muted uppercase font-semibold">
+          Track Quality Index (TQI)
+        </span>
+        <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-4 rounded-sm bg-emerald-500 shrink-0" />
+            <span className="text-[10px] text-slate-300">&gt; 85 OK</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-4 rounded-sm bg-amber-500 shrink-0" />
+            <span className="text-[10px] text-slate-300">70-85 Warn</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-4 rounded-sm bg-red-500 shrink-0" />
+            <span className="text-[10px] text-slate-300">&lt; 70 IAL</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Defect Anomaly Markers */}
+      <div className="space-y-1">
+        <span className="text-[10px] text-scada-muted uppercase font-semibold">
+          Defect Severity Pin
+        </span>
+        <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+          {severityKeys.map((key) => {
+            const meta = SEVERITY_CONFIG[key];
+            return (
+              <div key={key} className="flex items-center gap-1.5">
+                <span
+                  className="h-2.5 w-2.5 rounded-full border border-white/80 shrink-0"
+                  style={{ backgroundColor: meta.hex }}
+                />
+                <span className="text-[10px] text-slate-300">{meta.label}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
