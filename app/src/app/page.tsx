@@ -185,6 +185,9 @@ export default function OperationalDashboard() {
         />
       </div>
 
+      {/* Railway Track Accent Motif */}
+      <div className="railway-track my-1" />
+
       {/* 3. Signature Route Line Diagram */}
       <RouteLineDiagram
         defects={defects}

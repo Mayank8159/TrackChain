@@ -2,14 +2,19 @@
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { CheckCircle2, Loader2, Radio, Server, Sparkles } from "lucide-react";
 import { useModeStore, type AppMode } from "../../stores/mode-store";
 import { cn } from "../../lib/utils";
 
 export function ModeToggle() {
-  const { mode, connectionState, setMode } = useModeStore();
+  const { mode, hasHydrated, connectionState, setMode } = useModeStore();
+  const [mounted, setMounted] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleToggle = async (newMode: AppMode) => {
     if (newMode === mode || isSwitching) return;
@@ -21,7 +26,7 @@ export function ModeToggle() {
     }
   };
 
-  const isDemo = mode === "DEMO";
+  const isDemo = (!mounted || !hasHydrated) ? true : mode === "DEMO";
 
   return (
     <div

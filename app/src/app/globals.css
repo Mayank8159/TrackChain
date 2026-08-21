@@ -236,7 +236,7 @@
   /* Map edge vignette — blends the map into the glass card */
   .leaflet-map-vignette {
     box-shadow: inset 0 0 60px 20px rgba(2, 6, 23, 0.85);
-    pointer-events: none;
+    pointer-events: none !important;
     position: absolute;
     inset: 0;
     z-index: 400;
@@ -349,6 +349,72 @@
   animation: nodeEntrance 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+
+/* =============================================================================
+   RAILWAY EDITORIAL MOTIFS & SIGNAL NODES (Prompt 34)
+   ============================================================================= */
+
+/* The Transit Track Divider */
+.railway-track {
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(90deg, 
+    rgba(6, 182, 212, 0) 0%, 
+    rgba(6, 182, 212, 0.8) 20%, 
+    rgba(6, 182, 212, 0.8) 80%, 
+    rgba(6, 182, 212, 0) 100%);
+  position: relative;
+  margin: 1.5rem 0;
+}
+.railway-track::before {
+  content: "";
+  position: absolute;
+  top: -3px; left: 10%; right: 10%; height: 8px;
+  background-image: repeating-linear-gradient(
+    90deg, 
+    rgba(6, 182, 212, 0.6) 0px, 
+    rgba(6, 182, 212, 0.6) 2px, 
+    transparent 2px, 
+    transparent 12px
+  );
+}
+
+/* Signal Nodes (Replacing basic status badges) */
+.signal-node {
+  width: 12px; height: 12px; border-radius: 50%;
+  display: inline-block; margin-right: 12px;
+  box-shadow: 0 0 10px currentColor;
+  border: 2px solid rgba(255,255,255,0.8);
+}
+.signal-emerald { color: #10B981; background: #10B981; }
+.signal-amber { color: #F59E0B; background: #F59E0B; animation: pulse-amber 2s infinite; }
+.signal-red { color: #EF4444; background: #EF4444; animation: pulse-red 1.5s infinite; }
+
+/* Ghost Numbers for KPIs */
+.ghost-number {
+  font-size: 5rem; font-weight: 900; line-height: 1;
+  color: rgba(148, 163, 184, 0.07); /* Faint slate ghost */
+  position: absolute; top: -10px; left: -5px;
+  pointer-events: none; z-index: 0;
+  font-family: var(--font-mono, monospace), sans-serif;
+}
+
+@keyframes pulse-amber {
+  0%, 100% { box-shadow: 0 0 5px #F59E0B; }
+  50% { box-shadow: 0 0 15px #F59E0B, 0 0 30px #F59E0B; }
+}
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 5px #EF4444; }
+  50% { box-shadow: 0 0 20px #EF4444, 0 0 40px #EF4444; }
+}
+
+@keyframes scan-line {
+  0% { top: 0%; }
+  100% { top: 100%; }
+}
+.animate-scan-line {
+  animation: scan-line 2s linear infinite;
+}
 
 /* =============================================================================
    ACCESSIBILITY & REDUCED MOTION (Global gate — must be last)

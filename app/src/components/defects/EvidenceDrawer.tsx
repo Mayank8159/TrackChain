@@ -82,7 +82,7 @@ export function EvidenceDrawer({
                 </span>
               </div>
               <p className="text-[11px] font-mono text-scada-muted uppercase">
-                {defect.defectClass.replace("_", " ")} · {defect.streamSource} STREAM
+                {defect.defectClass.replaceAll("_", " ")} · {defect.streamSource} STREAM
               </p>
             </div>
           </div>

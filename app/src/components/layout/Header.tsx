@@ -45,7 +45,12 @@ function TickingISTClock() {
 }
 
 function ConnectionStatusLED() {
-  const { mode, connectionState, pingMs, setConnectionState, setPingMs } = useModeStore();
+  const { mode, hasHydrated, connectionState, pingMs, setConnectionState, setPingMs } = useModeStore();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // In REAL mode: Poll backend health every 10s and measure round-trip ping latency
   useEffect(() => {
@@ -109,6 +114,22 @@ function ConnectionStatusLED() {
       subtitle: "Offline",
     };
   };
+
+  if (!mounted || !hasHydrated) {
+    return (
+      <div className="flex items-center gap-2 rounded-control bg-slate-950/80 px-2.5 py-1 border border-scada-border/50 shadow-inner min-w-[110px]">
+        <span className="h-2 w-2 rounded-full shrink-0 bg-slate-700 animate-pulse" />
+        <div className="flex flex-col text-left">
+          <span className="text-[10px] font-mono font-bold tracking-wider text-slate-500 leading-none">
+            INITIALIZING
+          </span>
+          <span className="text-[8px] font-mono text-slate-600 leading-tight mt-0.5">
+            Connecting...
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   const config = getStatusConfig();
 

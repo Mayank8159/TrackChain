@@ -233,7 +233,9 @@ def create_app() -> FastAPI:
     # --- Process-frame endpoint ---
     @_application.post("/process-frame", tags=["Frame Processing"], response_model=ProcessFrameResponse)
     async def process_frame(req: ProcessFrameRequest):
-        return _process_frame_logic(req, LineGeometry, ProcessFrameResponse)
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _process_frame_logic, req, LineGeometry, ProcessFrameResponse)
 
     return _application
 
@@ -335,6 +337,36 @@ def _process_frame_logic(req: Any, LineGeometry: Any, ProcessFrameResponse: Any)
 
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
 
+    # Calculate honest vision degradation status and confidence score
+    hough_lines_count = len(rails) + len(sleepers)
+    yolo_boxes_count = len(yolo_boxes)
+
+    # Check for glare, excessive noise, or sensor overexposure
+    is_glare_or_noise = False
+    if len(geometry) > 40:
+        is_glare_or_noise = True
+    elif _cv2 and _np:
+        try:
+            gray = _cv2.cvtColor(img, _cv2.COLOR_BGR2GRAY)
+            mean_val = float(_np.mean(gray))
+            if mean_val > 210 or (mean_val > 130 and len(geometry) > 25):
+                is_glare_or_noise = True
+        except Exception:
+            pass
+
+    vision_status = "OK"
+    if is_glare_or_noise:
+        vision_status = "DEGRADED"
+        vision_confidence_score = 0.15
+    elif len(rails) < 2 and hough_lines_count < 2:
+        vision_status = "DEGRADED"
+        vision_confidence_score = 0.0
+    elif hough_lines_count < 4 and len(rails) < 2:
+        vision_status = "LOW_CONFIDENCE"
+        vision_confidence_score = round(min(1.0, (hough_lines_count * 0.1) + (yolo_boxes_count * 0.2)), 2)
+    else:
+        vision_confidence_score = round(min(1.0, (hough_lines_count * 0.1) + (yolo_boxes_count * 0.2)), 2)
+
     return ProcessFrameResponse(
         camera_id=req.camera_id,
         resolution=(w, h),
@@ -347,6 +379,8 @@ def _process_frame_logic(req: Any, LineGeometry: Any, ProcessFrameResponse: Any)
         yolo_weights_loaded=_yolo_loaded,
         yolo_boxes=yolo_boxes,
         status="ok",
+        vision_status=vision_status,
+        vision_confidence_score=vision_confidence_score,
     )
 
 

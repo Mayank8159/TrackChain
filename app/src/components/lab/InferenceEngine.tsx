@@ -3,7 +3,7 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { UploadCloud, FileImage, Sparkles, AlertTriangle, ArrowRight } from "lucide-react";
+import { UploadCloud, FileImage, Sparkles, AlertTriangle, ArrowRight, ScanLine } from "lucide-react";
 import { useModeStore } from "@/stores/mode-store";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/api";
@@ -29,13 +29,55 @@ export function InferenceEngine({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
+  const compressAndResizeImage = (file: File): Promise<{ base64Data: string; dataUrl: string }> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const maxW = 640;
+        const maxH = 480;
+        let w = img.width;
+        let h = img.height;
+
+        if (w > maxW || h > maxH) {
+          const ratio = Math.min(maxW / w, maxH / h);
+          w = Math.max(1, Math.round(w * ratio));
+          h = Math.max(1, Math.round(h * ratio));
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Unable to initialize canvas 2D rendering context"));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+        const base64Data = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
+        resolve({ base64Data, dataUrl });
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Failed to load image into DOM"));
+      };
+
+      img.src = objectUrl;
+    });
+  };
+
   const processImageFile = async (file: File) => {
-    // 1. Enforce 5MB limit
-    if (file.size > 5 * 1024 * 1024) {
+    // 1. Enforce 10MB limit
+    if (file.size > 10 * 1024 * 1024) {
       showToast({
         type: "error",
         title: "File Exceeds Size Limit",
-        description: `Selected file is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Maximum allowed payload is 5.0MB.`,
+        description: `Selected file is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Maximum allowed payload is 10.0MB.`,
       });
       return;
     }
@@ -44,31 +86,24 @@ export function InferenceEngine({
       showToast({
         type: "error",
         title: "Invalid File Format",
-        description: "Please upload a valid JPEG, PNG, or SVG track image.",
+        description: "Please upload a valid JPEG, PNG, or WebP track image.",
       });
       return;
     }
 
     onInferenceStart();
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const dataUrl = e.target?.result as string;
-      const base64Data = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
-
+    try {
+      const { base64Data, dataUrl } = await compressAndResizeImage(file);
       await executeInference(base64Data, dataUrl);
-    };
-
-    reader.onerror = (err) => {
+    } catch (err: any) {
       onInferenceError(err);
       showToast({
         type: "error",
-        title: "File Read Failed",
-        description: "Unable to read raw image bytes from filesystem.",
+        title: "Image Preprocessing Failed",
+        description: err?.message || "Unable to optimize image for inference pipeline.",
       });
-    };
-
-    reader.readAsDataURL(file);
+    }
   };
 
   const executeInference = async (base64Data: string, previewUrl: string) => {
@@ -109,6 +144,8 @@ export function InferenceEngine({
         yolo_boxes: resp.yolo_boxes || [],
         yolo_weights_loaded: resp.yolo_weights_loaded !== false,
         status: "ok",
+        vision_status: resp.vision_status || "OK",
+        vision_confidence_score: resp.vision_confidence_score ?? 1.0,
       };
 
       onInferenceComplete(realResult, previewUrl, false);
@@ -171,20 +208,34 @@ export function InferenceEngine({
   };
 
   return (
-    <div
+    <label
       onDragOver={(e) => {
         e.preventDefault();
         setIsDragOver(true);
       }}
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
-      onClick={() => fileInputRef.current?.click()}
-      className={`rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 ${
+      className={`relative block w-full h-56 border-2 border-dashed transition-all cursor-pointer group overflow-hidden bg-slate-950/40 rounded-xl ${
         isDragOver
-          ? "border-cyan-400 bg-cyan-950/20"
-          : "border-scada-border hover:border-slate-600 bg-slate-900/60"
+          ? "border-cyan-400 bg-cyan-950/30"
+          : "border-slate-800 hover:border-cyan-500/80"
       }`}
     >
+      {/* Scanner Laser Line Animation */}
+      <div className="absolute inset-x-0 top-0 h-0.5 bg-cyan-400 shadow-[0_0_15px_#06B6D4] animate-scan-line opacity-0 group-hover:opacity-100 transition-opacity" />
+
+      <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+        <div className="w-12 h-12 mb-3 text-slate-500 group-hover:text-cyan-400 transition-colors flex items-center justify-center">
+          <ScanLine className="w-10 h-10" strokeWidth={1.5} />
+        </div>
+        <p className="text-xs font-mono font-bold uppercase tracking-widest text-slate-300 group-hover:text-cyan-300 transition-colors">
+          Drop Frame for YOLOv8n Optical Inference
+        </p>
+        <p className="text-[10px] font-mono text-slate-500 mt-2">
+          Max 10MB • Auto-Resized & Compressed to 640×480
+        </p>
+      </div>
+
       <input
         ref={fileInputRef}
         type="file"
@@ -194,21 +245,8 @@ export function InferenceEngine({
             processImageFile(e.target.files[0]);
           }
         }}
-        className="hidden"
+        className="sr-only"
       />
-
-      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-cyan-400">
-        <UploadCloud size={20} />
-      </div>
-
-      <div className="space-y-0.5 font-mono">
-        <p className="text-xs font-bold text-white">
-          Drop track image here or <span className="text-cyan-400 underline">browse</span>
-        </p>
-        <p className="text-[10px] text-scada-muted">
-          Supports JPEG, PNG, SVG up to 5MB · Base64 JPEG Ingest
-        </p>
-      </div>
-    </div>
+    </label>
   );
 }

@@ -173,6 +173,24 @@ export function ImageViewport({
         )}
       </div>
 
+      {/* 2b. Sensor Degraded Center Warning Banner */}
+      {inferenceResult?.vision_status === "DEGRADED" && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-amber-500/20 border border-amber-500 rounded-lg backdrop-blur-md animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.3)] pointer-events-none">
+          <div className="flex items-center gap-2 text-amber-300 font-mono text-sm">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>⚠ VISION DEGRADED: Low Confidence / Possible Sensor Obstruction</span>
+          </div>
+        </div>
+      )}
+      {inferenceResult?.vision_status === "LOW_CONFIDENCE" && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-amber-500/15 border border-amber-500/50 rounded-lg backdrop-blur-md shadow-[0_0_15px_rgba(245,158,11,0.2)] pointer-events-none">
+          <div className="flex items-center gap-2 text-amber-300/90 font-mono text-xs">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>⚠ LOW CONFIDENCE: Optical geometry partially obscured</span>
+          </div>
+        </div>
+      )}
+
       {/* 3. Central Image & SVG Projection Layer */}
       {imageSrc ? (
         <div

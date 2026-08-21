@@ -34,12 +34,14 @@ import { usePlaybackSync } from "@/hooks/usePlaybackSync";
 import { formatChainage, formatTimestamp, formatConfidence, formatDuration } from "@/lib/format";
 import type { DefectEvent } from "@/lib/types";
 
-function LiveMissionTimer({ startTime }: { startTime: string }) {
+function LiveMissionTimer({ startTime }: { startTime?: string }) {
   const [elapsedSec, setElapsedSec] = useState<number>(0);
 
   useEffect(() => {
+    if (!startTime) return;
     const calcElapsed = () => {
       const startMs = new Date(startTime).getTime();
+      if (isNaN(startMs)) return;
       const nowMs = Date.now();
       setElapsedSec(Math.max(0, Math.floor((nowMs - startMs) / 1000)));
     };

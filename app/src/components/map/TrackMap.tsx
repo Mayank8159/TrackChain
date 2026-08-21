@@ -39,19 +39,7 @@ export function TrackMap({
   className,
 }: TrackMapProps) {
   return (
-    <div className={`relative w-full overflow-hidden rounded-lg border border-scada-border bg-slate-950 ${className || ""}`}>
-      {/* Top Left HUD Status Badge */}
-      <div className="absolute top-3 left-3 z-[400] flex flex-wrap items-center gap-2 bg-slate-950/90 px-3 py-1.5 rounded-control border border-scada-border backdrop-blur font-mono text-xs shadow-xl">
-        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-        <span className="font-bold text-white uppercase">
-          NDLS-AGC Mainline Corridor
-        </span>
-        <span className="text-scada-muted">|</span>
-        <span className="text-cyan-400">
-          RTK GNSS Fix (±0.05m)
-        </span>
-      </div>
-
+    <div className={`relative w-full h-[580px] overflow-hidden bg-slate-950 rounded-xl ${className || ""}`}>
       {/* Dynamic Leaflet Map Component wrapped with ErrorBoundary */}
       <ErrorBoundary fallbackTitle="GIS Mapping Engine Suspended">
         <DynamicTrackMapLeaflet
@@ -59,11 +47,42 @@ export function TrackMap({
           currentChainageM={currentChainageM}
           onSelectDefect={onSelectDefect}
           selectedDefectId={selectedDefectId}
+          className="h-full w-full"
         />
       </ErrorBoundary>
 
+      {/* The Vignette Overlay (Pointer events none) */}
+      <div
+        className="leaflet-map-vignette absolute inset-0 z-10 pointer-events-none"
+        style={{ boxShadow: "inset 0 0 100px 40px rgba(2, 6, 23, 0.9)" }}
+      />
+
+      {/* Floating Raw HUD (Top Left) */}
+      <div className="absolute top-6 left-6 z-20 pointer-events-none">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
+          <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-cyan-400">
+            Live GIS Corridor Telemetry
+          </p>
+        </div>
+        <h2 className="text-2xl font-bold font-mono text-white drop-shadow-lg flex items-baseline gap-3">
+          NDLS → AGC
+          <span className="text-slate-400 text-xs font-mono font-normal">
+            Active Faults: {defects.length}
+          </span>
+        </h2>
+        <div className="railway-track w-64 mt-3 mb-1" />
+      </div>
+
+      {/* Floating Raw HUD (Bottom Left Coordinates) */}
+      <div className="absolute bottom-6 left-6 z-20 pointer-events-none">
+        <div className="bg-slate-950/80 border border-slate-800/80 px-3 py-1.5 rounded font-mono text-[11px] text-slate-400 backdrop-blur-md">
+          <span className="text-cyan-400 font-bold">RTK GNSS:</span> Fix Quality 4 (±0.05m) · 12 SVs Locked
+        </div>
+      </div>
+
       {/* Bottom Right Floating Legend Overlay */}
-      <div className="absolute bottom-3 right-3 z-[400] pointer-events-auto">
+      <div className="absolute bottom-6 right-6 z-20 pointer-events-auto">
         <MapLegend />
       </div>
     </div>

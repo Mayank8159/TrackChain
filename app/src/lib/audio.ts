@@ -27,12 +27,29 @@ class AudioManager {
     }
   }
 
-  private ensureContext(): AudioContext | null {
-    if (!this.ctx) {
-      this.initContext();
+  public unlock(): void {
+    try {
+      if (!this.ctx) {
+        this.initContext();
+      }
+      if (this.ctx && this.ctx.state === "suspended") {
+        this.ctx.resume().catch(() => {});
+      }
+    } catch {
+      // Ignore unlock errors
     }
-    if (this.ctx && this.ctx.state === "suspended") {
-      this.ctx.resume().catch(() => {});
+  }
+
+  private ensureContext(): AudioContext | null {
+    try {
+      if (!this.ctx) {
+        this.initContext();
+      }
+      if (this.ctx && this.ctx.state === "suspended") {
+        this.ctx.resume().catch(() => {});
+      }
+    } catch {
+      return null;
     }
     return this.ctx;
   }
@@ -43,7 +60,7 @@ class AudioManager {
   public playCriticalAlarm(): void {
     if (!this.soundEnabled) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || ctx.state === "suspended") return;
 
     try {
       const now = ctx.currentTime;
@@ -77,7 +94,7 @@ class AudioManager {
   public playHighWarning(): void {
     if (!this.soundEnabled) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || ctx.state === "suspended") return;
 
     try {
       const now = ctx.currentTime;
@@ -116,7 +133,7 @@ class AudioManager {
   public playAckChime(): void {
     if (!this.soundEnabled) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || ctx.state === "suspended") return;
 
     try {
       const now = ctx.currentTime;
@@ -142,3 +159,16 @@ class AudioManager {
 }
 
 export const audioManager = new AudioManager();
+
+// Global autoplay unlock listeners on first user gesture
+if (typeof window !== "undefined") {
+  const unlock = () => {
+    audioManager.unlock();
+    window.removeEventListener("click", unlock);
+    window.removeEventListener("keydown", unlock);
+    window.removeEventListener("touchstart", unlock);
+  };
+  window.addEventListener("click", unlock, { once: true, passive: true });
+  window.addEventListener("keydown", unlock, { once: true, passive: true });
+  window.addEventListener("touchstart", unlock, { once: true, passive: true });
+}

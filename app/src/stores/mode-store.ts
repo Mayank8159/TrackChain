@@ -10,6 +10,7 @@ export type ConnectionState = "ACTIVE" | "DEGRADED" | "ERROR" | "SWITCHING";
 
 interface ModeState {
   mode: AppMode;
+  hasHydrated: boolean;
   connectionState: ConnectionState;
   lastModeChange: number;
   pingMs: number | null;
@@ -18,6 +19,7 @@ interface ModeState {
   setMode: (targetMode: AppMode) => Promise<void>;
   setConnectionState: (state: ConnectionState) => void;
   setPingMs: (ping: number | null) => void;
+  setHasHydrated: (state: boolean) => void;
   resetToDemo: () => void;
 
   // Selectors / helpers
@@ -30,9 +32,12 @@ export const useModeStore = create<ModeState>()(
   persist(
     (set, get) => ({
       mode: "DEMO", // Safe default state: deterministic simulation
+      hasHydrated: false,
       connectionState: "ACTIVE",
       lastModeChange: 0,
       pingMs: null,
+
+      setHasHydrated: (state: boolean) => set({ hasHydrated: state }),
 
       setMode: async (targetMode: AppMode) => {
         const now = Date.now();
@@ -121,6 +126,9 @@ export const useModeStore = create<ModeState>()(
             }
       ),
       partialize: (state) => ({ mode: state.mode }), // Only persist mode, not transient connection states
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );

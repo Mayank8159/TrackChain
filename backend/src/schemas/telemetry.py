@@ -1,13 +1,30 @@
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
-from pydantic import Field
+from typing import List, Optional, Tuple, Any, Union
+from pydantic import Field, field_validator
 from src.schemas.common import BaseContractModel, IdempotentRequest
 
 
 class TelemetrySampleBase(BaseContractModel):
     chainage_m: float = Field(..., description="Distance along track in meters")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
     segment_id: Optional[str] = None
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def parse_timestamp(cls, v: Any) -> datetime:
+        if v is None:
+            return datetime.now(timezone.utc)
+        if isinstance(v, (int, float)):
+            # If timestamp is in milliseconds (e.g. > 1e11)
+            if v > 1e11:
+                v = v / 1000.0
+            return datetime.fromtimestamp(v, tz=timezone.utc)
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace("Z", "+00:00"))
+            except Exception:
+                pass
+        return v
 
     # Spatial & Kinematics
     latitude: Optional[float] = None
@@ -36,10 +53,15 @@ class TelemetrySampleBase(BaseContractModel):
     vibration_rms: float = Field(default=0.0)
     vibration_index: float = Field(default=0.0)
     track_gauge_mm: float = Field(default=1435.0)
+    gauge_mm: Optional[float] = Field(default=None)
     cant_mm: float = Field(default=0.0)
     twist_mm_per_m: float = Field(default=0.0)
     vertical_unevenness_mm: float = Field(default=0.0)
     alignment_dev_mm: float = Field(default=0.0)
+
+    def model_post_init(self, __context):
+        if self.gauge_mm is not None:
+            self.track_gauge_mm = self.gauge_mm
 
     # Diagnostics
     temperature_c: Optional[float] = None
@@ -108,4 +130,6 @@ class ProcessFrameResponse(BaseContractModel):
     yolo_weights_loaded: bool = False
     yolo_boxes: List[dict] = Field(default_factory=list)
     status: str
+    vision_status: Optional[str] = Field(default="OK")
+    vision_confidence_score: Optional[float] = Field(default=1.0)
 

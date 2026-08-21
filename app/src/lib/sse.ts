@@ -219,7 +219,16 @@ class SSEClient {
 
   private checkAutoDisconnect() {
     if (this.alertListeners.size === 0 && this.deviceListeners.size === 0 && this.realtimeListeners.size === 0) {
-      // Keep running or gracefully disconnect when no subscribers
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+      if (this.eventSource) {
+        this.eventSource.close();
+        this.eventSource = null;
+      }
+      this.isConnecting = false;
+      this.setStatus("disconnected");
     }
   }
 }

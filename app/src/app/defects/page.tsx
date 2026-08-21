@@ -427,14 +427,20 @@ function DefectRegistryContent() {
                               : "hover:bg-slate-800/50"
                           }`}
                         >
-                          {/* Defect ID + Checkmark if Acknowledged */}
+                          {/* Defect ID + Signal Node */}
                           <TableCell>
-                            <div className="flex items-center gap-2">
-                              {isAck && <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />}
-                              {isDism && <XCircle size={14} className="text-red-400 shrink-0" />}
+                            <div className="flex items-center gap-2.5">
+                              <span className={`signal-node ${
+                                defect.severity === 'critical' ? 'signal-red' : 
+                                defect.severity === 'high' ? 'signal-amber' : 'signal-emerald'
+                              }`} />
                               <div>
-                                <div className="font-mono font-bold text-white">{defect.id}</div>
-                                <div className="text-[10px] font-mono text-scada-muted">
+                                <div className="font-mono font-bold text-white flex items-center gap-1.5">
+                                  {defect.id}
+                                  {isAck && <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />}
+                                  {isDism && <XCircle size={12} className="text-red-400 shrink-0" />}
+                                </div>
+                                <div className="text-[10px] font-mono text-slate-500">
                                   {defect.sessionId}
                                 </div>
                               </div>
@@ -442,13 +448,13 @@ function DefectRegistryContent() {
                           </TableCell>
 
                           {/* Chainage */}
-                          <TableCell className="font-mono font-semibold text-cyan-400">
+                          <TableCell className="font-mono font-bold text-cyan-400">
                             {formatChainage(defect.chainageM ?? (defect as any).chainage_m ?? 0)}
                           </TableCell>
 
                           {/* Defect Class */}
-                          <TableCell className="uppercase font-mono text-scada-text font-bold">
-                            {(defect.defectClass || (defect as any).defect_class || "anomaly").replace(/_/g, " ")}
+                          <TableCell className="uppercase font-mono text-slate-100 font-bold tracking-wide">
+                            {(defect.defectClass || (defect as any).defect_class || "anomaly").replaceAll("_", " ")}
                           </TableCell>
 
                           {/* Severity */}

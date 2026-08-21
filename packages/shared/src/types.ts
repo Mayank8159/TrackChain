@@ -465,6 +465,8 @@ export interface InferenceResult {
   yolo_boxes: BoundingBox[];
   yolo_weights_loaded: boolean;
   status?: string;
+  vision_status?: "OK" | "DEGRADED" | "LOW_CONFIDENCE";
+  vision_confidence_score?: number;
 }
 
 export interface ImageProvenance {

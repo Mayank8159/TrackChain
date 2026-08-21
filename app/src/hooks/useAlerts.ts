@@ -35,29 +35,48 @@ export function useAlerts() {
       if (snoozedClasses.includes(defectClass)) return;
 
       const severity = incomingAlert.severity || "high";
+      const chainage = incomingAlert.chainage_m ?? incomingAlert.chainageM ?? 0;
+      const deterministicId =
+        incomingAlert.id ||
+        incomingAlert.defect_id ||
+        incomingAlert.defectId ||
+        `ALT-${chainage}-${defectClass}`;
+
       const newAlert: AlertEvent = {
-        id: incomingAlert.id || `ALT-${Date.now()}`,
-        defectId: incomingAlert.defect_id || incomingAlert.defectId || "DEF-001",
+        id: deterministicId,
+        defectId: incomingAlert.defect_id || incomingAlert.defectId || deterministicId,
         severity,
         defectClass,
-        chainageM: incomingAlert.chainage_m ?? incomingAlert.chainageM ?? 0,
+        chainageM: chainage,
         message:
           incomingAlert.message ||
           `Critical safety fault [${defectClass.toUpperCase()}] detected at ${(
-            (incomingAlert.chainage_m || 0) / 1000
+            chainage / 1000
           ).toFixed(3)} km`,
         timestamp: incomingAlert.timestamp || new Date().toISOString(),
         acknowledged: false,
       };
 
-      // Trigger audio alarm if sound is enabled
-      if (severity === "critical") {
-        audioManager.playCriticalAlarm();
-      } else if (severity === "high") {
-        audioManager.playHighWarning();
-      }
+      setAlerts((prev) => {
+        if (
+          prev.some(
+            (a) =>
+              a.id === newAlert.id ||
+              (a.defectId === newAlert.defectId && a.chainageM === newAlert.chainageM)
+          )
+        ) {
+          return prev;
+        }
 
-      setAlerts((prev) => [newAlert, ...prev.filter((a) => a.id !== newAlert.id)]);
+        // Trigger audio alarm if sound is enabled only on fresh alert encounter
+        if (severity === "critical") {
+          audioManager.playCriticalAlarm();
+        } else if (severity === "high") {
+          audioManager.playHighWarning();
+        }
+
+        return [newAlert, ...prev].slice(0, 50);
+      });
     },
     [snoozedClasses]
   );
