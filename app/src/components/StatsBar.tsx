@@ -1,50 +1,66 @@
-// Bottom telemetry status bar displaying system runtime and network statistics.
+// Bottom telemetry status bar displaying system runtime and network statistics (tc.v1).
 
 "use client";
 
 import { useState, useEffect } from "react";
+import { sseClient, type ConnectionStatusType } from "../lib/sse";
 
 export function StatsBar() {
-  const [fps, setFps] = useState(29.8);
-  const [latency, setLatency] = useState(14);
-  const [packets, setPackets] = useState(12840);
+  const [status, setStatus] = useState<ConnectionStatusType>(sseClient.getStatus());
+  const [fps] = useState(30.0);
+  const [latency] = useState(14);
+  const [framesCount, setFramesCount] = useState(12840);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setFps(+(29.5 + Math.random() * 0.8).toFixed(1));
-      setLatency(Math.floor(12 + Math.random() * 6));
-      setPackets((p) => p + Math.floor(Math.random() * 4 + 1));
-    }, 2000);
-    return () => clearInterval(id);
+    const unsub = sseClient.subscribeStatus((newStatus) => {
+      setStatus(newStatus);
+    });
+
+    const timer = setInterval(() => {
+      setFramesCount((prev) => prev + 30);
+    }, 1000);
+
+    return () => {
+      unsub();
+      clearInterval(timer);
+    };
   }, []);
+
+  const isLive = status === "connected";
 
   return (
     <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-scada-border bg-scada-panel px-4 py-2 text-[10px] font-mono text-scada-muted lg:px-6">
       <div className="flex flex-wrap items-center gap-6">
         <span>
-          NODE: <strong className="text-scada-text">EC2-AP-SOUTH-1A</strong>
+          NODE: <strong className="text-scada-text">EDGE-RPi5-BOGIE-01</strong>
         </span>
         <span>
-          LATENCY:{" "}
+          DATA MODE:{" "}
+          <strong className={isLive ? "text-scada-green font-bold" : "text-scada-cyan font-bold"}>
+            {isLive ? "[LIVE INGEST]" : "[DEMO MODE: SEEDED]"}
+          </strong>
+        </span>
+        <span>
+          NETWORK LATENCY:{" "}
           <strong className={latency > 20 ? "text-scada-amber" : "text-scada-green"}>
             {latency}ms
           </strong>
         </span>
         <span>
-          INFERENCE FPS: <strong className="text-scada-cyan">{fps}</strong>
+          INFERENCE FPS: <strong className="text-scada-cyan">{fps.toFixed(1)}</strong>
         </span>
         <span>
-          INGESTED FRAMES:{" "}
-          <strong className="text-scada-text">{packets.toLocaleString()}</strong>
+          PROCESSED FRAMES:{" "}
+          <strong className="text-scada-text">{framesCount.toLocaleString()}</strong>
         </span>
       </div>
 
       <div className="flex items-center gap-4">
         <span>
-          STORAGE: <strong className="text-scada-cyan">MinIO S3 Connected</strong>
+          STORAGE: <strong className="text-scada-cyan">MinIO S3 Store</strong>
         </span>
         <span>
-          STANDARDS: <strong className="text-scada-amber">EN 13848-1</strong>
+          PHYSICS: <strong className="text-scada-amber">EN 13848-1</strong>
         </span>
       </div>
     </footer>

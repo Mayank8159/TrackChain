@@ -1,4 +1,4 @@
-// Main interactive SCADA control room layout with video feed, gauges, and anomaly stream.
+// Main interactive SCADA control room layout with video feed, gauges, and anomaly stream (tc.v1).
 
 "use client";
 
@@ -7,14 +7,18 @@ import { FrameViewer } from "./FrameViewer";
 import { GaugeMetric } from "./GaugeMetric";
 import { AnomalyFeed } from "./AnomalyFeed";
 import { StatsBar } from "./StatsBar";
+import { useTelemetry } from "../hooks/useTelemetry";
 
 export function ControlRoom() {
+  const { data: telemetry = [] } = useTelemetry("ses-delhi-agra-001");
+  const latestPoint = telemetry[0] || {
+    trackGaugeMm: 1435.2,
+    cantMm: 12.0,
+    alignmentDevMm: 1.8,
+  };
+
   return (
-    <div className="flex min-h-screen flex-col bg-scada-bg text-scada-text">
-      <Header />
-
-      <div className="glow-line" />
-
+    <div className="flex flex-col h-full bg-scada-bg text-scada-text">
       <div className="flex-1 p-4 lg:p-6">
         <div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_400px]">
           {/* Left: Frame viewer + Gauges */}
@@ -26,7 +30,7 @@ export function ControlRoom() {
                 label="Track Gauge"
                 unit="mm"
                 standard={1435}
-                current={1436}
+                current={latestPoint.trackGaugeMm || 1435.2}
                 min={1425}
                 max={1445}
                 warnDelta={5}
@@ -36,7 +40,7 @@ export function ControlRoom() {
                 label="Cant Deficiency"
                 unit="mm"
                 standard={0}
-                current={12}
+                current={latestPoint.cantMm || 12.0}
                 min={0}
                 max={100}
                 warnDelta={40}
@@ -46,7 +50,7 @@ export function ControlRoom() {
                 label="Alignment Dev."
                 unit="mm"
                 standard={0}
-                current={3}
+                current={latestPoint.alignmentDevMm || 1.8}
                 min={-20}
                 max={20}
                 warnDelta={8}

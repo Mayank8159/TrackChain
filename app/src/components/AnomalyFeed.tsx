@@ -1,80 +1,13 @@
-// Live anomaly event feed displaying edge-detected defects and severity levels.
+// Live anomaly event feed displaying edge-detected defects and severity levels (tc.v1).
 
 "use client";
 
-import { useState, useEffect } from "react";
-
-type Severity = "info" | "warning" | "critical";
-
-interface Alert {
-  id: number;
-  timestamp: string;
-  severity: Severity;
-  camera: string;
-  message: string;
-  value?: string;
-}
-
-const MOCK_ALERTS: Omit<Alert, "id" | "timestamp">[] = [
-  {
-    severity: "critical",
-    camera: "CAM-SECTOR-A1",
-    message: "Gauge widening detected",
-    value: "+12mm",
-  },
-  {
-    severity: "warning",
-    camera: "CAM-SECTOR-B3",
-    message: "Cant deficiency approaching limit",
-    value: "+38mm",
-  },
-  {
-    severity: "info",
-    camera: "CAM-SECTOR-C2",
-    message: "Periodic scan complete",
-  },
-  {
-    severity: "warning",
-    camera: "CAM-SECTOR-A1",
-    message: "Alignment deviation exceeds threshold",
-    value: "+9mm",
-  },
-  {
-    severity: "critical",
-    camera: "CAM-SECTOR-B3",
-    message: "Potential rail fracture signature",
-  },
-  {
-    severity: "info",
-    camera: "CAM-SECTOR-C2",
-    message: "Camera auto-calibrated",
-  },
-  {
-    severity: "warning",
-    camera: "CAM-SECTOR-A1",
-    message: "Sleeper spacing anomaly",
-    value: "Δ42mm",
-  },
-  {
-    severity: "critical",
-    camera: "CAM-SECTOR-B3",
-    message: "Bogie detection zone overlap",
-  },
-  {
-    severity: "info",
-    camera: "CAM-SECTOR-C2",
-    message: "ML inference model updated",
-  },
-  {
-    severity: "warning",
-    camera: "CAM-SECTOR-A1",
-    message: "Excessive cross-level variation",
-    value: "+7mm",
-  },
-];
+import { useState } from "react";
+import { useAlerts } from "../hooks/useAlerts";
+import type { AlertEvent, SeverityLevel } from "../lib/types";
 
 const SEVERITY_STYLES: Record<
-  Severity,
+  string,
   { dot: string; border: string; badge: string; timeBg: string }
 > = {
   info: {
@@ -83,11 +16,29 @@ const SEVERITY_STYLES: Record<
     badge: "badge-cyan",
     timeBg: "bg-scada-cyan/10",
   },
+  low: {
+    dot: "bg-scada-cyan",
+    border: "border-l-scada-cyan",
+    badge: "badge-cyan",
+    timeBg: "bg-scada-cyan/10",
+  },
+  medium: {
+    dot: "bg-scada-amber",
+    border: "border-l-scada-amber",
+    badge: "badge-amber",
+    timeBg: "bg-scada-amber/10",
+  },
   warning: {
     dot: "bg-scada-amber",
     border: "border-l-scada-amber",
     badge: "badge-amber",
     timeBg: "bg-scada-amber/10",
+  },
+  high: {
+    dot: "bg-scada-red",
+    border: "border-l-scada-red",
+    badge: "badge-red",
+    timeBg: "bg-scada-red/10",
   },
   critical: {
     dot: "bg-scada-red animate-pulse",
@@ -97,24 +48,9 @@ const SEVERITY_STYLES: Record<
   },
 };
 
-let nextId = 1;
-
-function generateAlert(): Alert {
-  const base = MOCK_ALERTS[Math.floor(Math.random() * MOCK_ALERTS.length)];
-  return {
-    ...base,
-    id: nextId++,
-    timestamp: new Date().toLocaleTimeString("en-IN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }),
-  };
-}
-
-function AlertRow({ alert }: { alert: Alert }) {
-  const style = SEVERITY_STYLES[alert.severity];
+function AlertRow({ alert }: { alert: AlertEvent }) {
+  const sevKey = alert.severity || "info";
+  const style = SEVERITY_STYLES[sevKey] || SEVERITY_STYLES.info;
 
   return (
     <div
@@ -130,49 +66,43 @@ function AlertRow({ alert }: { alert: Alert }) {
         <span
           className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-mono font-medium ${style.timeBg} text-scada-muted`}
         >
-          {alert.timestamp}
+          {new Date(alert.timestamp).toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          })}
         </span>
       </div>
-      <div className="mt-1.5 flex items-center gap-2 pl-3.5">
+      <div className="mt-1.5 flex items-center justify-between pl-3.5">
         <span className="text-[10px] font-mono text-scada-muted">
-          {alert.camera}
+          Chainage: {(alert.chainageM / 1000).toFixed(3)} km
         </span>
-        {alert.value && (
-          <span
-            className={`text-[10px] font-mono font-bold ${
-              alert.severity === "critical"
-                ? "text-scada-red"
-                : alert.severity === "warning"
-                ? "text-scada-amber"
-                : "text-scada-cyan"
-            }`}
-          >
-            {alert.value}
-          </span>
-        )}
+        <span
+          className={`text-[10px] font-mono font-bold uppercase ${
+            alert.severity === "critical"
+              ? "text-scada-red"
+              : alert.severity === "high"
+              ? "text-scada-red"
+              : "text-scada-amber"
+          }`}
+        >
+          {alert.defectClass.replace("_", " ")}
+        </span>
       </div>
     </div>
   );
 }
 
 export function AnomalyFeed() {
-  const [alerts, setAlerts] = useState<Alert[]>(() =>
-    Array.from({ length: 6 }, () => generateAlert())
-  );
-  const [filter, setFilter] = useState<Severity | "all">("all");
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setAlerts((prev) => [generateAlert(), ...prev].slice(0, 30));
-    }, 3000);
-    return () => clearInterval(id);
-  }, []);
+  const { alerts } = useAlerts();
+  const [filter, setFilter] = useState<string>("all");
 
   const filtered =
     filter === "all" ? alerts : alerts.filter((a) => a.severity === filter);
 
   const criticalCount = alerts.filter((a) => a.severity === "critical").length;
-  const warningCount = alerts.filter((a) => a.severity === "warning").length;
+  const highCount = alerts.filter((a) => a.severity === "high").length;
 
   return (
     <div className="scada-card flex h-full flex-col overflow-hidden border border-scada-border">
@@ -188,15 +118,15 @@ export function AnomalyFeed() {
               {criticalCount} CRIT
             </span>
           )}
-          {warningCount > 0 && (
-            <span className="badge-amber">{warningCount} WARN</span>
+          {highCount > 0 && (
+            <span className="badge-amber">{highCount} HIGH</span>
           )}
         </div>
       </div>
 
       {/* Filter tabs */}
       <div className="flex gap-1 border-b border-scada-border bg-scada-panel px-4 py-2">
-        {(["all", "critical", "warning", "info"] as const).map((f) => (
+        {(["all", "critical", "high", "medium"] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -220,7 +150,7 @@ export function AnomalyFeed() {
         </div>
         {filtered.length === 0 && (
           <div className="flex items-center justify-center py-12 text-xs font-mono text-scada-muted">
-            No alerts matching filter
+            No anomalies matching filter
           </div>
         )}
       </div>
@@ -228,7 +158,7 @@ export function AnomalyFeed() {
       {/* Footer */}
       <div className="border-t border-scada-border bg-scada-panel px-4 py-2">
         <p className="text-[10px] font-mono text-scada-muted">
-          {alerts.length} events in buffer
+          {alerts.length} verified events in buffer
         </p>
       </div>
     </div>

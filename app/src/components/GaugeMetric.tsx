@@ -1,8 +1,6 @@
-// Real-time track geometry gauge indicator with tolerance thresholds.
+// Real-time track geometry gauge indicator with tolerance thresholds (tc.v1).
 
 "use client";
-
-import { useState, useEffect } from "react";
 
 interface GaugeMetricProps {
   label: string;
@@ -19,25 +17,13 @@ export function GaugeMetric({
   label,
   unit,
   standard,
-  current: initialCurrent,
+  current,
   min,
   max,
   warnDelta,
   critDelta,
 }: GaugeMetricProps) {
-  const [val, setVal] = useState(initialCurrent);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      const jitter = (Math.random() - 0.5) * 2;
-      setVal((prev) => {
-        const next = prev + jitter * 0.3;
-        return +Math.min(max, Math.max(min, next)).toFixed(1);
-      });
-    }, 1500);
-    return () => clearInterval(id);
-  }, [min, max]);
-
+  const val = Number(current.toFixed(1));
   const delta = Math.abs(val - standard);
   const isCrit = delta >= critDelta;
   const isWarn = delta >= warnDelta && !isCrit;
