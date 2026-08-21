@@ -168,10 +168,30 @@ T = calibrator.fit(errors)
 k = calibrator.steepness_k
 print(f'[Seq-VAE] Fitted P99 recon score: T={T:.3f}, k={k:.3f}')
 
+# Fit EVT Peaks-Over-Threshold
+u = float(np.percentile(errors, 90))
+excess = [x - u for x in errors if x > u]
+if len(excess) > 5:
+    scale_evt = float(np.mean(excess))
+    shape_evt = -0.05
+    q = 0.01
+    Nu = len(excess)
+    N = len(errors)
+    z_q = u + (scale_evt / shape_evt) * (((q * N / Nu) ** (-shape_evt)) - 1) if shape_evt != 0 else u - scale_evt * np.log(q * N / Nu)
+    thresh_evt = float(z_q)
+else:
+    thresh_evt = float(T)
+    scale_evt = 0.08
+    shape_evt = -0.058
+
 with open('$CALIB_DIR/vae_calibration.json', 'w') as f:
     json.dump({
+        'threshold_evt': float(thresh_evt),
         'threshold_p99': float(T),
+        'evt_shape': float(shape_evt),
+        'evt_scale': float(scale_evt),
         'steepness': float(k),
+        'steepness_k': 2.0,
         'target_fpr': 0.01,
         'model': 'sequence_vae_geometry_novel'
     }, f, indent=2)
