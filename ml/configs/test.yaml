@@ -1,0 +1,23 @@
+# TrackChain Phase 2.7 Final Verification & Test Suite Configuration (tc.v1 SOTA)
+
+test:
+  latency_budget_ms:
+    yolo_fp32: 15
+    yolo_int8: 8
+    patchcore: 20
+    bilstm: 5
+    seq_vae: 5
+    full_pipeline_fp32: 60
+    full_pipeline_int8: 35
+  target_fps: 15
+  fusion:
+    persistence_window: 3
+    decision_threshold: 0.50
+    known_threshold: 0.60
+    novel_threshold: 0.50
+  calibration:
+    score_min: 0.0
+    score_max: 1.0
+    universal_threshold: 0.50
+  schema:
+    version: "tc.v1"

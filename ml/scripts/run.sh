@@ -294,6 +294,10 @@ fi
 # =============================================================================
 header "STEP 7/7: Full Test Suite Verification"
 
+run_step "full_test_suite" \
+    "$CHECKPOINT_DIR/.tests.done" \
+    bash ml/scripts/test.sh
+
 ELAPSED=$(( $(date +%s) - START_TIME ))
 echo ""
 header "TrackChain Phase 2 — Training Pipeline Complete in ${ELAPSED}s"

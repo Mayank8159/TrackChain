@@ -152,19 +152,19 @@ with open('$CALIB_DIR/vae_calibration.json', 'w') as f:
 ok "Seq-VAE sigmoid calibration saved"
 
 # --- STEP 5: Cross-Model Sync Verification ----------------------------------
-header "STEP 5/5: Cross-Model Calibration Sync Verification"
+header "STEP 5/6: Cross-Model Calibration Sync Verification"
 python ml/scripts/calibrate_all_models.py
-python -m pytest ml/tests/test_calibration_sync.py ml/tests/test_signal_contract.py -v --tb=short
-ok "All 5 models calibrated to identical [0.0, 1.0] scale"
+python ml/scripts/verify_sync.py
+ok "All 5 models calibrated to identical [0.0, 1.0] scale with synchronized 0.50 boundary"
 
-# --- STEP 6: Full Integration Test ------------------------------------------
-header "Final: Full Pipeline Integration Test"
-python -m pytest ml/tests/test_pipeline_integration.py -v --tb=short
+# --- STEP 6: Full Phase 2.7 Verification & Test Pyramid ----------------------
+header "STEP 6/6: Full Phase 2.7 Verification & Test Pyramid"
+bash ml/scripts/test.sh
 
 # --- Summary -----------------------------------------------------------------
-header "Calibration COMPLETE"
+header "TrackChain Phase 2 — Calibration & Verification 100% COMPLETE"
 ok "All calibration artifacts saved to: $CALIB_DIR/"
 ls -la "$CALIB_DIR/"
 echo ""
-ok "Phase 2 ML stack is FULLY SEALED and production-ready."
-ok "Next step: Shift trained weights to Phase 3 backend hardening."
+ok "Phase 2 ML stack is FULLY SEALED, calibrated, and production-ready."
+ok "Ready for live capstone demo: python ml/scripts/final_demo.py"

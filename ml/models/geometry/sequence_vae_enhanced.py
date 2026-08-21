@@ -369,6 +369,36 @@ class EnhancedSequenceVAE(nn.Module):
                 'combined_score': 0.7 * recon_error + 0.3 * mahalanobis_dist,
             }
 
+    def score_to_probability(self, raw_score: float) -> float:
+        """
+        Converts raw ensemble anomaly score into a calibrated anomaly probability in [0.0, 1.0].
+        At raw_score == threshold_evt, returns 0.50 (the universal decision boundary).
+        Strict assertion guarantees 0.0 <= prob <= 1.0.
+        """
+        t = float(getattr(self, "threshold_evt", 1.65))
+        k = float(getattr(self, "steepness_k", 2.0))
+        prob = float(1.0 / (1.0 + np.exp(-k * (raw_score - t) / max(t, 1e-4))))
+        prob = float(np.clip(prob, 0.0, 1.0))
+        assert 0.0 <= prob <= 1.0, f"Calibrated probability out of bounds: {prob}"
+        return prob
+
+    def predict(self, sequence: Union[torch.Tensor, np.ndarray]) -> Dict[str, Any]:
+        """
+        Inference on a sequence window returning calibrated anomaly probability.
+        """
+        scores = self.compute_anomaly_score(sequence)
+        raw_score = scores.get('combined_score', 0.0)
+        calibrated_prob = self.score_to_probability(raw_score)
+        return {
+            'raw_score': float(raw_score),
+            'calibrated_prob': float(calibrated_prob),
+            'fired': bool(calibrated_prob >= 0.50),
+            'is_anomaly': bool(calibrated_prob >= 0.50),
+            'recon_error': float(scores.get('recon_error', 0.0)),
+            'mahalanobis_dist': float(scores.get('mahalanobis_dist', 0.0)),
+            'threshold': 0.50,
+        }
+
     @staticmethod
     def fit_evt_threshold(normal_errors: Union[List[float], np.ndarray], target_fpr: float = 0.01) -> Dict[str, float]:
         """
@@ -429,22 +459,14 @@ class OverlappingWindowInference:
     def predict(self, sequence: torch.Tensor) -> Dict[str, Union[float, list, int]]:
         """
         Predict with overlapping windows.
-
-        Args:
-            sequence: (total_len, n_features)
-
-        Returns:
-            Maximum anomaly score across all windows
         """
         seq_len = len(sequence)
 
         if seq_len < self.window_size:
-            # Pad if too short
             padding = torch.zeros(self.window_size - seq_len, sequence.shape[1], dtype=sequence.dtype, device=sequence.device)
             sequence = torch.cat([sequence, padding], dim=0)
             seq_len = len(sequence)
 
-        # Extract overlapping windows
         windows = []
         positions = []
 
@@ -457,17 +479,18 @@ class OverlappingWindowInference:
             windows = [sequence[:self.window_size]]
             positions = [0]
 
-        # Score each window
         scores = []
         for window in windows:
             score = self.model.compute_anomaly_score(window)
-            scores.append(score['ensemble'])
+            scores.append(score.get('combined_score', 0.0))
 
-        # Return maximum score (most anomalous window)
         max_score = max(scores)
+        calibrated_prob = self.model.score_to_probability(max_score)
 
         return {
             'ensemble': max_score,
+            'calibrated_prob': calibrated_prob,
+            'fired': bool(calibrated_prob >= 0.50),
             'all_scores': scores,
             'positions': positions,
             'max_position': positions[scores.index(max_score)],

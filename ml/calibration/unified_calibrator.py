@@ -1,7 +1,7 @@
 """
 ml/calibration/unified_calibrator.py
 Central Unified Calibration Manager for all TrackChain vision and geometry models (tc.v1 SOTA).
-Synchronizes all 5 model outputs into the unified [0.0, 1.0] probability space.
+Synchronizes all 5 model outputs into the unified [0.0, 1.0] probability space with strict range guards.
 """
 
 import json
@@ -33,20 +33,29 @@ class UnifiedCalibrator:
         self.calibrators[model_name] = calibrator
 
     def calibrate(self, model_name: str, raw_score: float) -> float:
-        """Calibrate a single raw score from a registered model."""
+        """
+        Calibrate a single raw score from a registered model into [0.0, 1.0] probability.
+        Guarantees outputs strictly within [0.0, 1.0].
+        """
         if model_name not in self.calibrators:
-            return float(np.clip(raw_score, 0.0, 1.0))
+            prob = float(np.clip(raw_score, 0.0, 1.0))
+            return prob
 
         cal = self.calibrators[model_name]
         if hasattr(cal, "scale"):
-            return float(cal.scale(raw_score))
+            prob = float(cal.scale(raw_score))
         elif hasattr(cal, "calibrate_probs"):
             probs = cal.calibrate_probs(np.array([[raw_score, 0.0]]))
-            return float(probs[0, 0])
+            prob = float(probs[0, 0])
         elif hasattr(cal, "temperature"):
             T = float(cal.temperature.item()) if hasattr(cal.temperature, "item") else float(cal.temperature)
-            return float(1.0 / (1.0 + np.exp(-raw_score / max(T, 1e-4))))
-        return float(np.clip(raw_score, 0.0, 1.0))
+            prob = float(1.0 / (1.0 + np.exp(-raw_score / max(T, 1e-4))))
+        else:
+            prob = float(np.clip(raw_score, 0.0, 1.0))
+
+        prob = float(np.clip(prob, 0.0, 1.0))
+        assert 0.0 <= prob <= 1.0, f"Calibrated probability for {model_name} out of [0, 1] range: {prob}"
+        return prob
 
     def calibrate_all(self, signals: List[CalibratedSignal]) -> List[CalibratedSignal]:
         """Iterates over a list of signals and updates calibrated probabilities."""
@@ -55,6 +64,7 @@ class UnifiedCalibrator:
             if stream_key and stream_key in self.calibrators:
                 cal_prob = self.calibrate(stream_key, sig.raw_score if hasattr(sig, "raw_score") else sig.value)
                 sig.value = cal_prob
+                sig.calibrated_prob = cal_prob
                 sig.fired = bool(cal_prob >= sig.threshold)
         return signals
 
@@ -83,10 +93,12 @@ class UnifiedCalibrator:
             manifest = json.load(f)
         for name, cfg in manifest.items():
             method = cfg.get("method")
-            if method == "sigmoid_threshold_scaling":
+            if method == "sigmoid_threshold_scaling" or method in ["evt_peaks_over_threshold", "evt_pot"]:
+                thresh = cfg.get("threshold_evt", cfg.get("threshold_p99", cfg.get("threshold", 2.0)))
+                k = cfg.get("steepness_k", cfg.get("steepness", 2.0))
                 uc.register_model(name, SigmoidDistanceCalibrator(
-                    threshold=cfg.get("threshold_p99", 2.0),
-                    steepness_k=cfg.get("steepness_k", 2.0),
+                    threshold=thresh,
+                    steepness_k=k,
                 ))
             elif method == "weibull_cdf":
                 uc.register_model(name, WeibullDistanceCalibrator(

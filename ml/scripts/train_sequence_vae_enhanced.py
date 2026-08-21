@@ -301,14 +301,20 @@ def train_enhanced_vae(args):
                   f"β:{current_beta:.4f} | "
                   f"LR:{optimizer.param_groups[0]['lr']:.6f}")
 
-        # Save best model
+        # Save best model and check early stopping
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_epoch = epoch + 1
+            early_stopping_counter = 0
 
             save_path = Path(args.save_path)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save(model.state_dict(), save_path)
+        else:
+            early_stopping_counter += 1
+            if early_stopping_counter >= getattr(args, 'patience', 8):
+                print(f"\n[INFO] Early stopping triggered at epoch {epoch+1} (patience={args.patience} reached, best epoch: {best_epoch})")
+                break
 
         # Update learning rate
         scheduler.step()
@@ -358,8 +364,22 @@ def train_enhanced_vae(args):
     evt_recon = model.fit_evt_threshold(val_errors, target_fpr=0.01)
     evt_ensemble = model.fit_evt_threshold(ensemble_scores, target_fpr=0.01)
 
+    # Empirical False Positive Rate (FPR) Validation Check (Upgrade B)
+    actual_fpr = float(np.mean([s > evt_ensemble['threshold'] for s in ensemble_scores]))
     print(f"  P99 Ensemble Threshold:  {p99_ensemble:.4f}")
     print(f"  EVT Ensemble Threshold:  {evt_ensemble['threshold']:.4f} (shape={evt_ensemble['shape']:.4f}, scale={evt_ensemble['scale']:.4f})")
+    print(f"  Empirical Validation FPR: {actual_fpr*100:.2f}% (Target: 1.00%, Tolerance <= 2.00%)")
+    assert actual_fpr <= 0.02, f"FPR validation check failed: {actual_fpr:.4f} > 0.02"
+
+    # Strict Normalization Guard Check (Upgrade C)
+    model.threshold_evt = float(evt_ensemble['threshold'])
+    test_prob_min = model.score_to_probability(0.0)
+    test_prob_thresh = model.score_to_probability(evt_ensemble['threshold'])
+    test_prob_extreme = model.score_to_probability(evt_ensemble['threshold'] * 5.0)
+    assert 0.0 <= test_prob_min <= 0.20, f"Min score probability out of expected range: {test_prob_min}"
+    assert abs(test_prob_thresh - 0.50) < 0.01, f"Threshold decision boundary not 0.50: {test_prob_thresh}"
+    assert 0.90 <= test_prob_extreme <= 1.0, f"Extreme anomaly probability not near 1.0: {test_prob_extreme}"
+    print(f"  Probability Normalization: Verified (P(0)={test_prob_min:.3f}, P(Threshold)={test_prob_thresh:.3f}, P(Extreme)={test_prob_extreme:.3f})")
 
     # Save calibration manifest
     calibration = {
@@ -372,7 +392,11 @@ def train_enhanced_vae(args):
         'evt_scale': float(evt_ensemble['scale']),
         'evt_init_threshold': float(evt_ensemble['init_threshold']),
         'steepness': 0.5,
+        'steepness_k': 2.0,
         'target_fpr': 0.01,
+        'actual_fpr': actual_fpr,
+        'fpr_verified': True,
+        'normalization_guard_passed': True,
         'model': 'sequence_vae_geometry_novel',
         'val_samples': len(val_sequences),
         'mean_recon_error': float(np.mean(val_errors)) if val_errors else 0.0,
@@ -450,6 +474,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--weight-decay', '--weight_decay', dest='weight_decay', type=float, default=1e-4, help='Weight decay')
     parser.add_argument('--grad-clip', '--grad_clip', dest='grad_clip', type=float, default=1.0, help='Gradient clipping norm')
+    parser.add_argument('--patience', type=int, default=8, help='Early stopping patience')
 
     # Model parameters - ACCEPT BOTH HYPHEN AND UNDERSCORE FORMATS
     parser.add_argument('--latent-dim', '--latent_dim', dest='latent_dim', type=int, default=16,
