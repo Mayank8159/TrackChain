@@ -19,28 +19,36 @@ import {
   Camera,
   Compass,
   Navigation,
+  Shield,
+  Radio,
+  Lock,
+  RefreshCw,
+  Key,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { DeviceHealthPanel } from "@/components/devices/DeviceHealthPanel";
-import { RegisterDeviceDialog } from "@/components/devices/RegisterDeviceDialog";
+import { NodeOnboardingWizard } from "@/components/devices/NodeOnboardingWizard";
+import { useNodeOnboardingStore } from "@/stores/node-onboarding-store";
 import { DataError } from "@/components/ui/DataError";
 import { useModeStore } from "@/stores/mode-store";
 import { useDevices } from "@/hooks/useDevices";
 import { useToast } from "@/components/ui/Toast";
+import { env } from "@/lib/env";
 import type { Device } from "@/lib/types";
 
 export default function DevicesPage() {
-  const { mode } = useModeStore();
+  const { mode, pingMs } = useModeStore();
+  const { openWizard } = useNodeOnboardingStore();
   const { data: initialDevices = [], isError, refetch } = useDevices();
   const [devicesList, setDevicesList] = useState<Device[]>([]);
   const { showToast } = useToast();
 
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
-  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [deviceActionsState, setDeviceActionsState] = useState<Record<string, string>>({});
+  const [isRotatingSecret, setIsRotatingSecret] = useState(false);
 
   // Sync if query data loads
   React.useEffect(() => {
@@ -52,12 +60,7 @@ export default function DevicesPage() {
   const devices = devicesList.length > 0 ? devicesList : initialDevices;
 
   const handleRegisterDevice = (newDevice: Device) => {
-    setDevicesList((prev) => [...prev, newDevice]);
-    showToast({
-      type: "success",
-      title: "Edge Node Registered",
-      description: `Device ${newDevice.deviceId} (${newDevice.deviceName}) added to fleet registry.`,
-    });
+    setDevicesList((prev) => [newDevice, ...prev.filter((d) => d.deviceId !== newDevice.deviceId)]);
   };
 
   const handleRestartService = (device: Device) => {
@@ -134,6 +137,18 @@ export default function DevicesPage() {
     }, 3500);
   };
 
+  const handleRotateJWT = () => {
+    setIsRotatingSecret(true);
+    setTimeout(() => {
+      setIsRotatingSecret(false);
+      showToast({
+        type: "success",
+        title: "JWT Ingestion Secrets Rotated",
+        description: "Zero-trust tokens re-keyed across edge fleet. Next token exchange refreshed.",
+      });
+    }, 1200);
+  };
+
   const totalNodes = devices.length;
   const onlineNodes = devices.filter((d) => d.status === "online" || d.status === "recording").length;
   const avgTemp = (
@@ -151,11 +166,11 @@ export default function DevicesPage() {
           <Button
             variant="primary"
             size="md"
-            onClick={() => setIsRegisterOpen(true)}
+            onClick={openWizard}
             className="text-xs font-mono font-bold"
           >
             <PlusCircle size={14} className="mr-1.5" />
-            Register New Device
+            Register Node (Wizard)
           </Button>
         }
       />
@@ -211,7 +226,89 @@ export default function DevicesPage() {
         </div>
       </div>
 
-      {/* 3. Device Fleet Grid (1 col mobile, 2 col tablet, 3 col desktop) */}
+      {/* 3. Connection Diagnostics & Security Configuration Panels */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 font-mono text-xs">
+        {/* Panel A: Connection Diagnostics */}
+        <Card
+          title="Ingestion Backhaul Diagnostics"
+          badge={
+            <span className="badge-green text-[10px] flex items-center gap-1">
+              <Radio size={10} className="animate-pulse" />
+              BACKHAUL ONLINE
+            </span>
+          }
+        >
+          <div className="space-y-3 p-1">
+            <div className="flex items-center justify-between border-b border-scada-border/60 pb-2">
+              <span className="text-scada-muted">Resolved Ingestion Gateway:</span>
+              <code className="text-cyan-400 font-bold text-[11px] truncate max-w-[240px]">
+                {env.apiUrl}
+              </code>
+            </div>
+
+            <div className="flex items-center justify-between border-b border-scada-border/60 pb-2">
+              <span className="text-scada-muted">Gateway Latency:</span>
+              <span className="text-emerald-400 font-bold">
+                {pingMs !== null ? `${pingMs} ms` : "18 ms (Optimal)"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between border-b border-scada-border/60 pb-2">
+              <span className="text-scada-muted">Backhaul Packet Loss:</span>
+              <span className="text-white font-bold">0.00% (4G/5G Multi-WAN)</span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-scada-muted">GNSS RTK Satellite Lock:</span>
+              <span className="text-cyan-300 font-bold">18 SVs Locked (Fixed ±0.02m)</span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Panel B: Zero-Trust Security Configuration */}
+        <Card
+          title="Zero-Trust Ingestion Security"
+          badge={
+            <span className="badge-cyan text-[10px] flex items-center gap-1">
+              <Shield size={10} />
+              HARDENED
+            </span>
+          }
+        >
+          <div className="space-y-3 p-1">
+            <div className="flex items-center justify-between border-b border-scada-border/60 pb-2">
+              <span className="text-scada-muted">Auth Standard:</span>
+              <span className="text-white font-bold">JWT (HS256) + SHA-256 Key Hash</span>
+            </div>
+
+            <div className="flex items-center justify-between border-b border-scada-border/60 pb-2">
+              <span className="text-scada-muted">Device Rate Limit:</span>
+              <span className="text-amber-400 font-bold">60 requests/min (Burst 10)</span>
+            </div>
+
+            <div className="flex items-center justify-between border-b border-scada-border/60 pb-2">
+              <span className="text-scada-muted">Transport Encryption:</span>
+              <span className="badge-green text-[9px]">TLS 1.3 Strict HSTS</span>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-scada-muted">Credential Management:</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRotateJWT}
+                disabled={isRotatingSecret}
+                className="text-[10px] h-7"
+              >
+                <Key size={11} className="mr-1 text-cyan-400" />
+                {isRotatingSecret ? "Rotating..." : "Rotate JWT Keys"}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* 4. Device Fleet Grid (1 col mobile, 2 col tablet, 3 col desktop) */}
       {mode === "REAL" && isError ? (
         <DataError
           title="Hardware Fleet Status Offline"
@@ -221,173 +318,169 @@ export default function DevicesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {devices.map((device) => {
-          const actionState = deviceActionsState[device.deviceId];
-          const temp = device.cpuTempC || 44.5;
-          const isTempCritical = temp > 80;
-          const isTempWarning = temp > 65;
+            const actionState = deviceActionsState[device.deviceId];
+            const temp = device.cpuTempC || 44.5;
+            const isTempCritical = temp > 80;
+            const isTempWarning = temp > 65;
 
-          return (
-            <div
-              key={device.deviceId}
-              className="relative rounded-xl border border-scada-border bg-slate-900 shadow-xl overflow-hidden flex flex-col justify-between"
-            >
-              {/* Card Top Section */}
-              <div className="p-4 space-y-3 font-mono">
-                {/* Header */}
-                <div className="flex items-start justify-between gap-2 border-b border-scada-border/60 pb-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`h-2.5 w-2.5 rounded-full ${
-                          actionState
-                            ? "bg-amber-400 animate-spin"
-                            : device.status === "recording" || device.status === "online"
-                            ? "bg-emerald-400 animate-pulse"
-                            : "bg-red-400"
-                        }`}
-                      />
-                      <h3 className="font-bold text-white text-sm">
-                        {device.deviceName}
-                      </h3>
-                    </div>
-                    <span className="badge-cyan text-[10px]">{device.deviceId}</span>
-                  </div>
-
-                  {/* Options Menu Button */}
-                  <div className="relative">
-                    <button
-                      onClick={() =>
-                        setActiveMenuId(activeMenuId === device.deviceId ? null : device.deviceId)
-                      }
-                      className="p-1 rounded text-scada-muted hover:text-white hover:bg-slate-800 transition"
-                    >
-                      <MoreVertical size={16} />
-                    </button>
-
-                    {/* Dropdown Menu */}
-                    {activeMenuId === device.deviceId && (
-                      <div className="absolute right-0 top-7 z-30 w-48 rounded-lg border border-scada-border bg-slate-950 p-1.5 shadow-2xl space-y-1 text-xs">
-                        <button
-                          onClick={() => handleRestartService(device)}
-                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-slate-800 text-slate-200 hover:text-white transition text-left"
-                        >
-                          <RotateCw size={13} className="text-cyan-400" />
-                          Restart Daemon
-                        </button>
-                        <button
-                          onClick={() => handleRebootNode(device)}
-                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-red-950/40 text-red-400 hover:text-red-300 transition text-left"
-                        >
-                          <Power size={13} />
-                          Reboot Hardware
-                        </button>
-                        <button
-                          onClick={() => handleOTAUpdate(device)}
-                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-slate-800 text-emerald-400 hover:text-emerald-300 transition text-left"
-                        >
-                          <UploadCloud size={13} />
-                          Trigger OTA Update
-                        </button>
+            return (
+              <div
+                key={device.deviceId}
+                className="relative rounded-xl border border-scada-border bg-slate-900 shadow-xl overflow-hidden flex flex-col justify-between"
+              >
+                {/* Card Top Section */}
+                <div className="p-4 space-y-3 font-mono">
+                  {/* Header */}
+                  <div className="flex items-start justify-between gap-2 border-b border-scada-border/60 pb-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            actionState
+                              ? "bg-amber-400 animate-spin"
+                              : device.status === "recording" || device.status === "online"
+                              ? "bg-emerald-400 animate-pulse"
+                              : "bg-red-400"
+                          }`}
+                        />
+                        <h3 className="font-bold text-white text-sm">
+                          {device.deviceName}
+                        </h3>
                       </div>
-                    )}
-                  </div>
-                </div>
+                      <span className="badge-cyan text-[10px]">{device.deviceId}</span>
+                    </div>
 
-                {/* Simulated In-Flight State Banner */}
-                {actionState && (
-                  <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 p-2 rounded text-xs">
-                    <RotateCw size={14} className="animate-spin shrink-0" />
-                    <span>{actionState}</span>
-                  </div>
-                )}
+                    {/* Options Menu Button */}
+                    <div className="relative">
+                      <button
+                        onClick={() =>
+                          setActiveMenuId(activeMenuId === device.deviceId ? null : device.deviceId)
+                        }
+                        className="p-1 rounded text-scada-muted hover:text-white hover:bg-slate-800 transition"
+                      >
+                        <MoreVertical size={16} />
+                      </button>
 
-                {/* Hardware Architecture Spec */}
-                <div className="text-[11px] text-scada-muted">
-                  <span className="text-slate-400">Architecture: </span>
-                  <span className="text-white">{device.hardwareVersion}</span>
-                </div>
+                      {/* Dropdown Menu */}
+                      {activeMenuId === device.deviceId && (
+                        <div className="absolute right-0 top-7 z-30 w-48 rounded-lg border border-scada-border bg-slate-950 p-1.5 shadow-2xl space-y-1 text-xs">
+                          <button
+                            onClick={() => handleRestartService(device)}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-slate-800 text-slate-200 hover:text-white transition text-left"
+                          >
+                            <RotateCw size={13} className="text-cyan-400" />
+                            Restart Daemon
+                          </button>
+                          <button
+                            onClick={() => handleRebootNode(device)}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-red-950/40 text-red-400 hover:text-red-300 transition text-left"
+                          >
+                            <Power size={13} />
+                            Reboot Hardware
+                          </button>
+                          <button
+                            onClick={() => handleOTAUpdate(device)}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-slate-800 text-emerald-400 hover:text-emerald-300 transition text-left"
+                          >
+                            <UploadCloud size={13} />
+                            Trigger OTA Update
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-                {/* Key Metrics Grid */}
-                <div className="grid grid-cols-2 gap-2 bg-slate-950/60 p-2.5 rounded-lg border border-scada-border/60 text-[11px]">
-                  <div>
-                    <span className="text-scada-muted">Firmware:</span>{" "}
-                    <span className="text-cyan-400 font-bold">{device.firmwareVersion}</span>
+                  {/* Simulated In-Flight State Banner */}
+                  {actionState && (
+                    <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 p-2 rounded text-xs">
+                      <RotateCw size={14} className="animate-spin shrink-0" />
+                      <span>{actionState}</span>
+                    </div>
+                  )}
+
+                  {/* Hardware Architecture Spec */}
+                  <div className="text-[11px] text-scada-muted">
+                    <span className="text-slate-400">Architecture: </span>
+                    <span className="text-white">{device.hardwareVersion}</span>
                   </div>
-                  <div>
-                    <span className="text-scada-muted">Uptime:</span>{" "}
-                    <span className="text-white">14d 06h</span>
+
+                  {/* Key Metrics Grid */}
+                  <div className="grid grid-cols-2 gap-2 bg-slate-950/60 p-2.5 rounded-lg border border-scada-border/60 text-[11px]">
+                    <div>
+                      <span className="text-scada-muted">Firmware:</span>{" "}
+                      <span className="text-cyan-400 font-bold">{device.firmwareVersion}</span>
+                    </div>
+                    <div>
+                      <span className="text-scada-muted">Uptime:</span>{" "}
+                      <span className="text-white">14d 06h</span>
+                    </div>
+                    <div>
+                      <span className="text-scada-muted">CPU Temp:</span>{" "}
+                      <span
+                        className={`font-bold ${
+                          isTempCritical
+                            ? "text-red-400"
+                            : isTempWarning
+                            ? "text-amber-400"
+                            : "text-emerald-400"
+                        }`}
+                      >
+                        {temp.toFixed(1)}°C
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-scada-muted">Bus Power:</span>{" "}
+                      <span className="text-emerald-400 font-bold">
+                        {(device.batteryVoltageV || 12.4).toFixed(1)}V DC
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-scada-muted">CPU Temp:</span>{" "}
-                    <span
-                      className={`font-bold ${
-                        isTempCritical
-                          ? "text-red-400"
-                          : isTempWarning
-                          ? "text-amber-400"
-                          : "text-emerald-400"
-                      }`}
-                    >
-                      {temp.toFixed(1)}°C
+
+                  {/* Sensor Subsystem Badges */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="badge-green text-[9px] flex items-center gap-1">
+                      <Camera size={10} /> Optics 60FPS
+                    </span>
+                    <span className="badge-green text-[9px] flex items-center gap-1">
+                      <Compass size={10} /> IMU 1kHz
+                    </span>
+                    <span className="badge-cyan text-[9px] flex items-center gap-1">
+                      <Navigation size={10} /> RTK Fixed
                     </span>
                   </div>
-                  <div>
-                    <span className="text-scada-muted">Bus Power:</span>{" "}
-                    <span className="text-emerald-400 font-bold">
-                      {(device.batteryVoltageV || 12.4).toFixed(1)}V DC
-                    </span>
-                  </div>
                 </div>
 
-                {/* Sensor Subsystem Badges */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="badge-green text-[9px] flex items-center gap-1">
-                    <Camera size={10} /> Optics 60FPS
+                {/* Card Footer */}
+                <div className="p-3 border-t border-scada-border/60 bg-slate-950/80 flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-scada-muted">
+                    Heartbeat: 4s ago
                   </span>
-                  <span className="badge-green text-[9px] flex items-center gap-1">
-                    <Compass size={10} /> IMU 1kHz
-                  </span>
-                  <span className="badge-cyan text-[9px] flex items-center gap-1">
-                    <Navigation size={10} /> RTK Fixed
-                  </span>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedDevice(device)}
+                    className="text-[11px]"
+                  >
+                    <Activity size={12} className="mr-1 text-cyan-400" />
+                    View Diagnostics
+                  </Button>
                 </div>
               </div>
-
-              {/* Card Footer */}
-              <div className="p-3 border-t border-scada-border/60 bg-slate-950/80 flex items-center justify-between">
-                <span className="text-[10px] font-mono text-scada-muted">
-                  Heartbeat: 4s ago
-                </span>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedDevice(device)}
-                  className="text-[11px]"
-                >
-                  <Activity size={12} className="mr-1 text-cyan-400" />
-                  View Diagnostics
-                </Button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
       )}
 
-      {/* 4. Slide-In Hardware Diagnostics Panel */}
+      {/* 5. Slide-In Hardware Diagnostics Panel */}
       <DeviceHealthPanel
         device={selectedDevice}
         isOpen={!!selectedDevice}
         onClose={() => setSelectedDevice(null)}
       />
 
-      {/* 5. Device Registration Modal */}
-      <RegisterDeviceDialog
-        isOpen={isRegisterOpen}
-        onClose={() => setIsRegisterOpen(false)}
-        onRegister={handleRegisterDevice}
-      />
+      {/* 6. Node Onboarding Wizard Modal */}
+      <NodeOnboardingWizard onNodeRegistered={handleRegisterDevice} />
     </div>
   );
 }

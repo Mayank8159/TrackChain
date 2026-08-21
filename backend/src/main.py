@@ -63,14 +63,65 @@ app = FastAPI(
 # Tracing & Metrics Middleware
 app.add_middleware(RequestTraceMiddleware)
 
-# CORS
+# CORS Allowlist
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS if settings.ENVIRONMENT == "production" else ["*"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Device-ID", "X-Idempotency-Key", "X-Signature"],
 )
+
+# In-memory token bucket rate limiter per device / IP
+_rate_limit_store: dict[str, list[float]] = {}
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Bypass health probes and metrics from rate limits
+    if request.url.path in ["/health", "/api/health", "/api/v1/health", "/metrics", "/warmup"]:
+        return await call_next(request)
+
+    device_key = (
+        request.headers.get("X-Device-ID")
+        or request.headers.get("Authorization")
+        or request.client.host
+        if request.client
+        else "anonymous"
+    )
+    now = time.time()
+
+    # Clean old records older than 60s
+    timestamps = _rate_limit_store.get(device_key, [])
+    timestamps = [t for t in timestamps if now - t < 60.0]
+
+    limit = settings.RATE_LIMIT_REQUESTS_PER_MINUTE
+    if len(timestamps) >= limit:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "rate_limit_exceeded",
+                "detail": f"Device ingestion rate limit exceeded ({limit} req/min). Please back off.",
+                "retry_after": 60,
+            },
+            headers={"Retry-After": "60"},
+        )
+
+    timestamps.append(now)
+    _rate_limit_store[device_key] = timestamps
+
+    return await call_next(request)
+
+# Security Headers Middleware
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 @app.exception_handler(CircuitBreakerOpenError)

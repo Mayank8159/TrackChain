@@ -1,6 +1,7 @@
 // Native Server-Sent Events (SSE) client for TrackChain real-time alerts (tc.v1).
 
 import type { DefectEvent, RealtimePayload } from "./types";
+import { env } from "./env";
 
 export type ConnectionStatusType = "connecting" | "connected" | "disconnected";
 export type AlertStreamListener = (data: Partial<DefectEvent> | any) => void;
@@ -32,9 +33,7 @@ class SSEClient {
     this.isConnecting = true;
     this.setStatus("connecting");
 
-    const endpoint = process.env.NEXT_PUBLIC_API_BASE_URL
-      ? `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/alerts/stream`
-      : "/api/alerts/stream";
+    const endpoint = env.sseUrl;
 
     try {
       if (this.eventSource) {
