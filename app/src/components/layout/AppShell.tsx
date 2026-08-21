@@ -5,6 +5,7 @@
 import React, { useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { ModeBanner } from "../ui/ModeBanner";
 import { useUIStore } from "../../stores/ui-store";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -31,6 +32,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Global Command Header */}
         <Header />
+
+        {/* Global Mode & Connectivity Banner (DEMO / REAL ERROR) */}
+        <ModeBanner />
 
         {/* Independently scrollable main content viewport */}
         <main

@@ -24,6 +24,8 @@ import { Select } from "@/components/ui/Select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
 import { SeverityBadge } from "@/components/ui/SeverityBadge";
 import { EvidenceDrawer } from "@/components/defects/EvidenceDrawer";
+import { DataError } from "@/components/ui/DataError";
+import { useModeStore } from "@/stores/mode-store";
 import { useDefects } from "@/hooks/useDefects";
 import { useExport } from "@/hooks/useExport";
 import { useToast } from "@/components/ui/Toast";
@@ -33,6 +35,7 @@ import type { DefectEvent } from "@/lib/types";
 function DefectRegistryContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { mode } = useModeStore();
 
   // URL-synced filter parameters
   const initialSeverity = searchParams?.get("severity") || "all";
@@ -45,7 +48,7 @@ function DefectRegistryContent() {
   const [sourceFilter, setSourceFilter] = useState<string>(initialSource);
   const [searchQuery, setSearchQuery] = useState<string>(initialSearch);
 
-  const { defects: initialDefects = [], isDemoData } = useDefects();
+  const { defects: initialDefects = [], isDemoData, isError, refetch } = useDefects();
   const [defectsList, setDefectsList] = useState<DefectEvent[]>(initialDefects);
   const { exportDefectsCSV } = useExport();
   const { showToast } = useToast();
@@ -322,9 +325,17 @@ function DefectRegistryContent() {
             <span>Click any row to open the Investigation Drawer</span>
           </div>
 
-          {/* 4. High-Density Defect Data Table */}
-          <div className="relative w-full overflow-x-auto touch-pan-x overscroll-contain">
-            <div className="min-w-[900px]">
+          {/* REAL Mode Error State */}
+          {mode === "REAL" && isError ? (
+            <DataError
+              title="Defect Registry Offline"
+              message="Failed to retrieve classified defect anomalies from the backend API."
+              onRetry={() => refetch()}
+            />
+          ) : (
+            /* 4. High-Density Defect Data Table */
+            <div className="relative w-full overflow-x-auto touch-pan-x overscroll-contain">
+              <div className="min-w-[900px]">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -448,6 +459,7 @@ function DefectRegistryContent() {
               </Table>
             </div>
           </div>
+          )}
         </div>
       </Card>
 

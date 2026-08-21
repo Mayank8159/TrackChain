@@ -25,13 +25,16 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { DeviceHealthPanel } from "@/components/devices/DeviceHealthPanel";
 import { RegisterDeviceDialog } from "@/components/devices/RegisterDeviceDialog";
+import { DataError } from "@/components/ui/DataError";
+import { useModeStore } from "@/stores/mode-store";
 import { useDevices } from "@/hooks/useDevices";
 import { useToast } from "@/components/ui/Toast";
 import type { Device } from "@/lib/types";
 
 export default function DevicesPage() {
-  const { data: initialDevices = [] } = useDevices();
-  const [devicesList, setDevicesList] = useState<Device[]>(initialDevices);
+  const { mode } = useModeStore();
+  const { data: initialDevices = [], isError, refetch } = useDevices();
+  const [devicesList, setDevicesList] = useState<Device[]>([]);
   const { showToast } = useToast();
 
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
@@ -209,8 +212,15 @@ export default function DevicesPage() {
       </div>
 
       {/* 3. Device Fleet Grid (1 col mobile, 2 col tablet, 3 col desktop) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {devices.map((device) => {
+      {mode === "REAL" && isError ? (
+        <DataError
+          title="Hardware Fleet Status Offline"
+          message="Failed to poll edge node health, thermal telemetry, and camera frame diagnostics from the backend."
+          onRetry={() => refetch()}
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {devices.map((device) => {
           const actionState = deviceActionsState[device.deviceId];
           const temp = device.cpuTempC || 44.5;
           const isTempCritical = temp > 80;
@@ -363,6 +373,7 @@ export default function DevicesPage() {
           );
         })}
       </div>
+      )}
 
       {/* 4. Slide-In Hardware Diagnostics Panel */}
       <DeviceHealthPanel

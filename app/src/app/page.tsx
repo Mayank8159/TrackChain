@@ -18,6 +18,8 @@ import { LiveAlertsFeed } from "@/components/dashboard/LiveAlertsFeed";
 import { RecentDefects } from "@/components/dashboard/RecentDefects";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
+import { DataError } from "@/components/ui/DataError";
+import { useModeStore } from "@/stores/mode-store";
 import { useDashboardSummary } from "@/hooks/useDashboardSummary";
 import { useSessions } from "@/hooks/useSessions";
 import { useDefects } from "@/hooks/useDefects";
@@ -28,11 +30,14 @@ import { triggerDemoAlert } from "@/lib/mock-provider";
 
 export default function OperationalDashboard() {
   const [timeRange, setTimeRange] = useState("24h");
-  const { data: summary } = useDashboardSummary();
-  const { data: sessions = [], refetch: refetchSessions } = useSessions();
-  const { defects = [], refetch: refetchDefects } = useDefects();
+  const { mode } = useModeStore();
+  const { data: summary, isError: isSummaryError, refetch: refetchSummary } = useDashboardSummary();
+  const { data: sessions = [], isError: isSessionsError, refetch: refetchSessions } = useSessions();
+  const { defects = [], isError: isDefectsError, refetch: refetchDefects } = useDefects();
   const { alerts } = useAlerts();
   const { showToast } = useToast();
+
+  const isRealError = mode === "REAL" && (isSessionsError || isDefectsError || isSummaryError);
 
   const handleTriggerSimulatedFault = () => {
     const demoAlert = triggerDemoAlert();
@@ -57,15 +62,16 @@ export default function OperationalDashboard() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const handleRefresh = () => {
+    refetchSessions();
+    refetchDefects();
+    refetchSummary();
+  };
+
   const activeSessionsCount = sessions.filter((s) => s.status === "active").length;
   const criticalAlertsCount = alerts.filter(
     (a) => !a.acknowledged && a.severity === "critical"
   ).length;
-
-  const handleRefresh = () => {
-    refetchSessions();
-    refetchDefects();
-  };
 
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full">
@@ -122,6 +128,15 @@ export default function OperationalDashboard() {
           </Button>
         </div>
       </div>
+
+      {/* Explicit REAL Mode Error State */}
+      {isRealError && (
+        <DataError
+          title="Production Telemetry Stream Offline"
+          message="Failed to establish contact with the live FastAPI backend at http://localhost:8000. Switch to DEMO mode to view deterministic simulated track telemetry."
+          onRetry={handleRefresh}
+        />
+      )}
 
       {/* 2. Top KPI Metric Cards (4 Grid) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

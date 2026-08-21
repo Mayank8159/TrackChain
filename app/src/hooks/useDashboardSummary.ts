@@ -1,21 +1,15 @@
-// Fetch dashboard summary KPIs with deterministic fallback (tc.v1).
+// Fetch dashboard summary KPIs gated by DEMO vs REAL mode (tc.v1).
 
-import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { DashboardSummary } from "../lib/types";
 import { MOCK_DASHBOARD_SUMMARY } from "../lib/mock-provider";
+import { useRoutedData } from "../lib/data-router";
 
 export function useDashboardSummary() {
-  return useQuery<DashboardSummary>({
+  return useRoutedData<DashboardSummary>({
     queryKey: ["dashboard-summary"],
-    queryFn: async (): Promise<DashboardSummary> => {
-      try {
-        const data = await api.getDashboardSummary();
-        return data || MOCK_DASHBOARD_SUMMARY;
-      } catch {
-        return MOCK_DASHBOARD_SUMMARY;
-      }
-    },
-    initialData: MOCK_DASHBOARD_SUMMARY,
+    demoData: MOCK_DASHBOARD_SUMMARY,
+    fetchReal: () => api.getDashboardSummary(),
+    staleTime: 15000,
   });
 }

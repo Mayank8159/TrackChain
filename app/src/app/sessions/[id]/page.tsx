@@ -25,6 +25,8 @@ import { SessionStatusBadge } from "@/components/sessions/SessionStatusBadge";
 import { VideoPlayer, VideoPlayerHandle } from "@/components/video/VideoPlayer";
 import { TelemetryChart } from "@/components/telemetry/TelemetryChart";
 import { EvidenceModal } from "@/components/video/EvidenceModal";
+import { DataError } from "@/components/ui/DataError";
+import { useModeStore } from "@/stores/mode-store";
 import { useSession } from "@/hooks/useSession";
 import { useTelemetry } from "@/hooks/useTelemetry";
 import { useDefects } from "@/hooks/useDefects";
@@ -60,15 +62,22 @@ function LiveMissionTimer({ startTime }: { startTime: string }) {
 function SessionInspectionHeroContent() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const { mode } = useModeStore();
   const sessionId = (params?.id as string) || "ses-delhi-agra-001";
   const initialSeek = searchParams?.get("seek");
 
   const videoRef = useRef<VideoPlayerHandle | null>(null);
   const videoCardRef = useRef<HTMLDivElement | null>(null);
 
-  const { data: session } = useSession(sessionId);
-  const { data: telemetry = [] } = useTelemetry(sessionId);
-  const { defects: allDefects = [] } = useDefects();
+  const sessionQuery = useSession(sessionId);
+  const telemetryQuery = useTelemetry(sessionId);
+  const defectsQuery = useDefects();
+
+  const session = sessionQuery.data;
+  const telemetry = telemetryQuery.data || [];
+  const allDefects = defectsQuery.defects || [];
+
+  const isRealError = mode === "REAL" && (sessionQuery.isError || telemetryQuery.isError);
 
   // Filter defects for this session or fallback to mock items
   const sessionDefects = allDefects.filter(
@@ -111,6 +120,21 @@ function SessionInspectionHeroContent() {
       videoCardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   };
+
+  if (isRealError) {
+    return (
+      <div className="p-4 lg:p-6 max-w-7xl mx-auto w-full">
+        <DataError
+          title="Inspection Session Telemetry Offline"
+          message={`Failed to stream video metadata and 100 Hz sensor telemetry for session ${sessionId} from backend.`}
+          onRetry={() => {
+            sessionQuery.refetch();
+            telemetryQuery.refetch();
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full">

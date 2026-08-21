@@ -7,13 +7,16 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { TrackMap } from "@/components/map/TrackMap";
 import { EvidenceDrawer } from "@/components/defects/EvidenceDrawer";
+import { DataError } from "@/components/ui/DataError";
+import { useModeStore } from "@/stores/mode-store";
 import { useDefects } from "@/hooks/useDefects";
 import { useToast } from "@/components/ui/Toast";
 import { formatChainage } from "@/lib/format";
 import type { DefectEvent } from "@/lib/types";
 
 export default function MapPage() {
-  const { defects = [] } = useDefects();
+  const { mode } = useModeStore();
+  const { defects = [], isError, refetch } = useDefects();
   const { showToast } = useToast();
 
   const [selectedDefect, setSelectedDefect] = useState<DefectEvent | null>(null);
@@ -133,12 +136,20 @@ export default function MapPage() {
           </span>
         }
       >
-        <TrackMap
-          defects={defects}
-          currentChainageM={14200}
-          onSelectDefect={(d) => setSelectedDefect(d)}
-          selectedDefectId={selectedDefect?.id}
-        />
+        {mode === "REAL" && isError ? (
+          <DataError
+            title="GIS Geospatial Telemetry Offline"
+            message="Unable to acquire track corridor coordinates and live defect markers from the backend server."
+            onRetry={() => refetch()}
+          />
+        ) : (
+          <TrackMap
+            defects={defects}
+            currentChainageM={14200}
+            onSelectDefect={(d) => setSelectedDefect(d)}
+            selectedDefectId={selectedDefect?.id}
+          />
+        )}
       </Card>
 
       {/* 4. Slide-In Evidence Drawer */}

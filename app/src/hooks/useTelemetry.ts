@@ -1,49 +1,29 @@
-// Hook to fetch/poll telemetry series for a session with deterministic mock fallback (tc.v1).
+// Hook to fetch telemetry series for a session, gated by DEMO vs REAL mode (tc.v1).
 
-import { useState, useEffect, useCallback } from "react";
 import { api } from "../lib/api";
 import type { TelemetryPoint } from "../lib/types";
 import { MOCK_TELEMETRY_SERIES } from "../lib/mock-provider";
+import { useRoutedData } from "../lib/data-router";
 
 export function useTelemetry(sessionId?: string, pollIntervalMs = 0) {
-  const [data, setData] = useState<TelemetryPoint[]>(MOCK_TELEMETRY_SERIES);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [isDemoData, setIsDemoData] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const routed = useRoutedData<TelemetryPoint[]>({
+    queryKey: ["telemetry", sessionId],
+    demoData: MOCK_TELEMETRY_SERIES,
+    fetchReal: async () => {
+      if (!sessionId) return MOCK_TELEMETRY_SERIES;
+      return api.getTelemetrySeries(sessionId);
+    },
+    enabled: !!sessionId,
+    refetchInterval: pollIntervalMs || undefined,
+  });
 
-  const fetchTelemetry = useCallback(async () => {
-    if (!sessionId) {
-      setData(MOCK_TELEMETRY_SERIES);
-      setIsDemoData(true);
-      setLoading(false);
-      return;
-    }
-    try {
-      const result = await api.getTelemetrySeries(sessionId);
-      if (result && result.length > 0) {
-        setData(result);
-        setIsDemoData(false);
-      } else {
-        setData(MOCK_TELEMETRY_SERIES);
-        setIsDemoData(true);
-      }
-      setError(null);
-    } catch {
-      setData(MOCK_TELEMETRY_SERIES);
-      setIsDemoData(true);
-      setError(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId]);
-
-  useEffect(() => {
-    fetchTelemetry();
-    if (!pollIntervalMs || !sessionId) return;
-
-    const interval = setInterval(fetchTelemetry, pollIntervalMs);
-    return () => clearInterval(interval);
-  }, [fetchTelemetry, pollIntervalMs, sessionId]);
-
-  return { data, loading, error, isDemoData, refetch: fetchTelemetry };
+  return {
+    data: routed.data || [],
+    loading: routed.isLoading,
+    isLoading: routed.isLoading,
+    isError: routed.isError,
+    error: routed.error ? routed.error.message : null,
+    isDemoData: routed.isDemo,
+    refetch: routed.refetch,
+  };
 }

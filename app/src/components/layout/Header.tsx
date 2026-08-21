@@ -7,7 +7,9 @@ import Link from "next/link";
 import { Menu, Search, Bell, ShieldCheck } from "lucide-react";
 import { useUIStore } from "../../stores/ui-store";
 import { useAlerts } from "../../hooks/useAlerts";
-import { sseClient, type ConnectionStatusType } from "../../lib/sse";
+import { useModeStore } from "../../stores/mode-store";
+import { ModeToggle } from "../ui/ModeToggle";
+import { api } from "../../lib/api";
 import { cn } from "../../lib/utils";
 
 function TickingISTClock() {
@@ -40,41 +42,87 @@ function TickingISTClock() {
 }
 
 function ConnectionStatusLED() {
-  const [status, setStatus] = useState<ConnectionStatusType>(sseClient.getStatus());
+  const { mode, connectionState, pingMs, setConnectionState, setPingMs } = useModeStore();
 
+  // In REAL mode: Poll backend health every 10s and measure round-trip ping latency
   useEffect(() => {
-    return sseClient.subscribeStatus((newStatus) => {
-      setStatus(newStatus);
-    });
-  }, []);
+    if (mode !== "REAL") return;
 
-  const config = {
-    connected: {
-      dot: "bg-emerald-500 animate-pulse",
-      text: "text-emerald-400",
-      label: "LIVE SSE",
-    },
-    connecting: {
-      dot: "bg-amber-500 animate-spin",
-      text: "text-amber-400",
-      label: "CONNECTING",
-    },
-    disconnected: {
-      dot: "bg-cyan-400",
-      text: "text-cyan-400",
-      label: "DEMO MODE",
-    },
-  }[status];
+    const checkHealth = async () => {
+      const start = performance.now();
+      try {
+        const healthy = await api.healthCheck();
+        const latency = Math.round(performance.now() - start);
+        if (healthy) {
+          setPingMs(latency);
+          setConnectionState("ACTIVE");
+        } else {
+          setPingMs(null);
+          setConnectionState("ERROR");
+        }
+      } catch {
+        setPingMs(null);
+        setConnectionState("ERROR");
+      }
+    };
+
+    checkHealth();
+    const interval = setInterval(checkHealth, 10000);
+    return () => clearInterval(interval);
+  }, [mode, setConnectionState, setPingMs]);
+
+  const getStatusConfig = () => {
+    if (mode === "DEMO") {
+      return {
+        dot: "bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.6)]",
+        text: "text-cyan-300",
+        label: "DEMO MODE",
+        subtitle: "Scripted Stream",
+      };
+    }
+
+    if (connectionState === "ACTIVE") {
+      return {
+        dot: "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]",
+        text: "text-emerald-400",
+        label: "LIVE API",
+        subtitle: pingMs ? `${pingMs}ms` : "Connected",
+      };
+    }
+
+    if (connectionState === "DEGRADED") {
+      return {
+        dot: "bg-amber-500 animate-spin",
+        text: "text-amber-400",
+        label: "DEGRADED",
+        subtitle: "SSE Inactive",
+      };
+    }
+
+    return {
+      dot: "bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]",
+      text: "text-red-400",
+      label: "BACKEND ERROR",
+      subtitle: "Offline",
+    };
+  };
+
+  const config = getStatusConfig();
 
   return (
     <div
-      className="flex items-center gap-2 rounded-control bg-slate-900/80 px-2.5 py-1 border border-scada-border"
-      title={`Real-Time Ingestion Status: ${config.label}`}
+      className="flex items-center gap-2 rounded-control bg-slate-950/80 px-2.5 py-1 border border-scada-border shadow-inner"
+      title={`Data Source & Ingestion Status: ${config.label} (${config.subtitle})`}
     >
       <span className={cn("h-2 w-2 rounded-full shrink-0", config.dot)} />
-      <span className={cn("text-[10px] font-mono font-bold tracking-wider uppercase", config.text)}>
-        {config.label}
-      </span>
+      <div className="flex flex-col text-left">
+        <span className={cn("text-[10px] font-mono font-bold tracking-wider uppercase leading-none", config.text)}>
+          {config.label}
+        </span>
+        <span className="text-[8px] font-mono text-scada-muted leading-tight mt-0.5">
+          {config.subtitle}
+        </span>
+      </div>
     </div>
   );
 }
@@ -134,7 +182,10 @@ export function Header() {
 
       {/* Far Right Section: Live Control Cluster */}
       <div className="flex items-center gap-3">
-        {/* Connection LED */}
+        {/* Data Source Mode Toggle (DEMO ↔ REAL) */}
+        <ModeToggle />
+
+        {/* Connection LED & Latency */}
         <ConnectionStatusLED />
 
         {/* Ticking IST Clock */}

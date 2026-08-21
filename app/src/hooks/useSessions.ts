@@ -1,21 +1,15 @@
-// Fetch and cache the list of sessions with deterministic fallback (tc.v1).
+// Fetch and cache the list of sessions gated by DEMO vs REAL mode (tc.v1).
 
-import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { MonitoringSession } from "../lib/types";
 import { MOCK_SESSIONS } from "../lib/mock-provider";
+import { useRoutedData } from "../lib/data-router";
 
 export function useSessions() {
-  return useQuery<MonitoringSession[]>({
+  return useRoutedData<MonitoringSession[]>({
     queryKey: ["sessions"],
-    queryFn: async () => {
-      try {
-        const res = await api.getSessions();
-        return res && res.length > 0 ? res : MOCK_SESSIONS;
-      } catch {
-        return MOCK_SESSIONS;
-      }
-    },
-    initialData: MOCK_SESSIONS,
+    demoData: MOCK_SESSIONS,
+    fetchReal: () => api.getSessions(),
+    staleTime: 30000,
   });
 }

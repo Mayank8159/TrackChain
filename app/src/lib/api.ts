@@ -45,6 +45,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   // Health
   getHealth: () => request<{ status: string; service: string }>("/health"),
+  healthCheck: async (): Promise<boolean> => {
+    try {
+      const res = await request<{ status: string }>("/health");
+      return res && (res.status === "ok" || res.status === "healthy" || !!res.status);
+    } catch {
+      try {
+        const res = await request<{ status: string }>("/api/health");
+        return res && (res.status === "ok" || res.status === "healthy" || !!res.status);
+      } catch {
+        return false;
+      }
+    }
+  },
 
   // Devices
   getDevices: () => request<Device[]>("/api/devices"),
