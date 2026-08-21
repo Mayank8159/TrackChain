@@ -1,9 +1,11 @@
 """
-TrackChain Master YOLO Detector Training Module.
+TrackChain Master YOLO Detector Training Module (tc.v1 SOTA).
 Comprehensive training pipeline with:
-- MetricsLogger callback logging loss, mAP50, mAP50-95, precision, recall, and learning rate
-- ProgressiveTrainer resolution scheduling
-- Domain-specific railway augmentations (mosaic, mixup, copy-paste, HSV, perspective, flips)
+- Upgraded small-dataset anti-overfitting recipe (backbone freeze=10, dropout=0.1, erasing=0.2)
+- High-impact augmentation schedule (close_mosaic=10, copy_paste=0.5, mixup=0.15, mosaic=1.0)
+- High-resolution small-object sensitivity (imgsz=960 for fasteners/clips/cracks)
+- Realistic operating validation threshold (conf=0.25, iou=0.60)
+- MetricsLogger callback tracking loss, mAP50, mAP50-95, precision, recall, and learning rate
 - Automatic device resolution (CUDA GPU auto-detection with CPU fallback)
 - Canonical checkpoint synchronization with ModelRegistry
 - Automatic post-training test split validation and final metrics persistence
@@ -137,7 +139,7 @@ class MetricsLogger:
 class ProgressiveTrainer:
     """Implement progressive training schedule: start lower resolution, scale to target."""
 
-    def __init__(self, base_imgsz: int = 416, final_imgsz: int = 640):
+    def __init__(self, base_imgsz: int = 640, final_imgsz: int = 960):
         self.base_imgsz = base_imgsz
         self.final_imgsz = final_imgsz
 
@@ -165,6 +167,14 @@ def train_yolo_detector(
     epochs: Optional[int] = None,
     batch_size: Optional[int] = None,
     img_size: Optional[int] = None,
+    freeze: Optional[int] = None,
+    dropout: Optional[float] = None,
+    erasing: Optional[float] = None,
+    copy_paste: Optional[float] = None,
+    close_mosaic: Optional[int] = None,
+    patience: Optional[int] = None,
+    conf: Optional[float] = None,
+    iou: Optional[float] = None,
     device: Optional[str] = "auto",
     output_dir: Optional[str] = None,
     resume: bool = False,
@@ -172,6 +182,8 @@ def train_yolo_detector(
 ):
     """
     Unified training interface for TrackChain YOLO railway defect detector.
+    Incorporates upgraded hyperparameter recipe with backbone freezing,
+    extended mosaic retention, realistic validation threshold, and 960px input.
     """
     if YOLO is None:
         raise RuntimeError("Ultralytics is required for training. Install with: pip install ultralytics")
@@ -216,36 +228,60 @@ def train_yolo_detector(
 
     train_cfg = cfg.get("training", {})
     aug_cfg = cfg.get("augmentations", {})
+    val_cfg = cfg.get("validation", {})
 
     target_device = resolve_device(device if device != "auto" else cfg.get("device", "auto"))
 
-    # Resolve training parameters (CLI overrides config)
-    total_epochs = epochs or cfg.get("epochs") or train_cfg.get("epochs", 100)
-    batch = batch_size or cfg.get("batch") or train_cfg.get("batch_size", 16)
-    imgsz = img_size or cfg.get("imgsz") or cfg.get("model", {}).get("input_size", [640, 640])[0] if isinstance(cfg.get("model", {}).get("input_size"), list) else 640
+    # Resolve training parameters (CLI overrides config, with upgraded defaults)
+    total_epochs = epochs or cfg.get("epochs") or train_cfg.get("epochs", 80)
+    batch = batch_size or cfg.get("batch") or train_cfg.get("batch_size", 8)
+    
+    # Input size: default to 960 for small object detection (fasteners, clips)
+    if img_size:
+        imgsz = img_size
+    elif cfg.get("imgsz"):
+        imgsz = cfg.get("imgsz")
+    elif isinstance(cfg.get("model", {}).get("input_size"), list):
+        imgsz = cfg.get("model", {}).get("input_size")[0]
+    else:
+        imgsz = 960
+
     optimizer = cfg.get("optimizer") or train_cfg.get("optimizer", "AdamW")
-    lr0 = cfg.get("lr0") or train_cfg.get("lr0", 0.0008)
+    lr0 = cfg.get("lr0") or train_cfg.get("lr0", 0.001)
     lrf = cfg.get("lrf") or train_cfg.get("lrf", 0.01)
     cos_lr = cfg.get("cos_lr", train_cfg.get("cos_lr", True))
-    patience = cfg.get("patience", train_cfg.get("patience", 40))
-    close_mosaic = cfg.get("close_mosaic", train_cfg.get("close_mosaic", 30))
+    
+    patience_val = patience if patience is not None else cfg.get("patience", train_cfg.get("patience", 20))
+    close_mosaic_val = close_mosaic if close_mosaic is not None else cfg.get("close_mosaic", train_cfg.get("close_mosaic", 10))
+    freeze_val = freeze if freeze is not None else cfg.get("freeze", train_cfg.get("freeze", 10))
+    dropout_val = dropout if dropout is not None else cfg.get("dropout", train_cfg.get("dropout", 0.1))
+    erasing_val = erasing if erasing is not None else cfg.get("erasing", train_cfg.get("erasing", 0.2))
+    copy_paste_val = copy_paste if copy_paste is not None else cfg.get("copy_paste", aug_cfg.get("copy_paste", 0.5))
+    conf_val = conf if conf is not None else cfg.get("conf", val_cfg.get("conf", 0.25))
+    iou_val = iou if iou is not None else cfg.get("iou", val_cfg.get("iou", 0.60))
 
     # Model initialization
     model_name = cfg.get("model", {}).get("name", "yolov8n.pt") if isinstance(cfg.get("model"), dict) else cfg.get("model", "yolov8n.pt")
     base_weights = ModelRegistry.get_base_weights("vision", model_name)
     model_init = str(base_weights) if base_weights.exists() else model_name
 
-    print("=" * 70)
-    print("TrackChain YOLOv8n Defect Detector Training")
-    print("=" * 70)
-    print(f"Dataset YAML: {abs_data_yaml}")
-    print(f"Config:       {abs_config_path}")
-    print(f"Output Dir:   {abs_output_dir}")
-    print(f"Device:       {target_device}")
-    print(f"Epochs:       {total_epochs}")
-    print(f"Batch Size:   {batch}")
-    print(f"Image Size:   {imgsz}")
-    print(f"Optimizer:    {optimizer} (lr0={lr0}, cos_lr={cos_lr})")
+    print("=" * 75)
+    print("TrackChain Upgraded YOLOv8n Defect Detector Training (tc.v1 SOTA)")
+    print("=" * 75)
+    print(f"Dataset YAML:  {abs_data_yaml}")
+    print(f"Config:        {abs_config_path}")
+    print(f"Output Dir:    {abs_output_dir}")
+    print(f"Device:        {target_device}")
+    print(f"Epochs:        {total_epochs} (Patience: {patience_val})")
+    print(f"Batch Size:    {batch}")
+    print(f"Image Size:    {imgsz}x{imgsz}")
+    print(f"Optimizer:     {optimizer} (lr0={lr0}, cos_lr={cos_lr})")
+    print(f"Freeze Layers: {freeze_val} (Backbone regularization)")
+    print(f"Dropout:       {dropout_val}")
+    print(f"Erasing:       {erasing_val}")
+    print(f"Copy-Paste:    {copy_paste_val}")
+    print(f"Close Mosaic:  {close_mosaic_val} (Mosaic active till epoch {max(0, total_epochs - close_mosaic_val)})")
+    print(f"Val Conf / IoU:{conf_val} / {iou_val}")
 
     model = YOLO(model_init)
 
@@ -253,7 +289,7 @@ def train_yolo_detector(
     logger = MetricsLogger(abs_output_dir / "logs")
     model.add_callback("on_fit_epoch_end", logger.on_fit_epoch_end)
 
-    # Compose train arguments
+    # Compose train arguments (Note: label_smoothing removed as deprecated in Ultralytics)
     train_args = {
         "data": str(abs_data_yaml),
         "epochs": total_epochs,
@@ -272,6 +308,9 @@ def train_yolo_detector(
         "box": cfg.get("box", 7.5),
         "cls": cfg.get("cls", 0.5),
         "dfl": cfg.get("dfl", 1.5),
+        "freeze": freeze_val,
+        "dropout": dropout_val,
+        "erasing": erasing_val,
         "hsv_h": cfg.get("hsv_h", aug_cfg.get("hsv_h", 0.015)),
         "hsv_s": cfg.get("hsv_s", aug_cfg.get("hsv_s", 0.7)),
         "hsv_v": cfg.get("hsv_v", aug_cfg.get("hsv_v", 0.4)),
@@ -284,12 +323,12 @@ def train_yolo_detector(
         "fliplr": cfg.get("fliplr", aug_cfg.get("fliplr", 0.5)),
         "mosaic": cfg.get("mosaic", aug_cfg.get("mosaic", 1.0)),
         "mixup": cfg.get("mixup", aug_cfg.get("mixup", 0.15)),
-        "copy_paste": cfg.get("copy_paste", aug_cfg.get("copy_paste", 0.3)),
-        "close_mosaic": close_mosaic,
-        "patience": patience,
+        "copy_paste": copy_paste_val,
+        "close_mosaic": close_mosaic_val,
+        "patience": patience_val,
         "val": True,
-        "conf": cfg.get("conf", 0.001),
-        "iou": cfg.get("iou", 0.6),
+        "conf": conf_val,
+        "iou": iou_val,
         "workers": min(cfg.get("workers", 4), os.cpu_count() or 4),
         "pretrained": True,
         "project": str(abs_output_dir),
@@ -299,14 +338,14 @@ def train_yolo_detector(
         "plots": True,
         "save": True,
         "save_period": cfg.get("save_period", 10),
-        "label_smoothing": cfg.get("label_smoothing", 0.05),
         "rect": cfg.get("rect", False),
+        "resume": resume,
     }
 
     # Remove None items
     train_args = {k: v for k, v in train_args.items() if v is not None}
 
-    print("\n[INFO] Commencing training...")
+    print("\n[INFO] Commencing training with upgraded recipe...")
     start_time = time.time()
     results = model.train(**train_args)
     training_time = time.time() - start_time
@@ -327,27 +366,30 @@ def train_yolo_detector(
             shutil.copy(last_pt, canonical_best)
             shutil.copy(last_pt, alias_best)
 
-    # Validate best model on test split
+    # Validate best model on test split with realistic operating confidence (conf=0.25)
     final_metrics = {
         "training_time_hours": round(training_time / 3600, 4),
         "training_time_seconds": round(training_time, 2),
         "best_model": str(best_pt if best_pt.exists() else canonical_best),
         "timestamp": datetime.now().isoformat(),
         "device": target_device,
+        "imgsz": imgsz,
+        "conf_threshold": conf_val,
+        "iou_threshold": iou_val,
     }
 
     if canonical_best.exists():
         try:
             best_model = YOLO(str(canonical_best))
-            val_results = best_model.val(data=str(abs_data_yaml), split="test")
+            val_results = best_model.val(data=str(abs_data_yaml), split="test", conf=conf_val, iou=iou_val)
             final_metrics["test_mAP50"] = float(val_results.box.map50)
             final_metrics["test_mAP50_95"] = float(val_results.box.map)
             final_metrics["test_precision"] = float(val_results.box.mp)
             final_metrics["test_recall"] = float(val_results.box.mr)
 
-            print("\n" + "=" * 70)
-            print("Post-Training Test Set Validation Results")
-            print("=" * 70)
+            print("\n" + "=" * 75)
+            print(f"Post-Training Test Set Validation Results (conf={conf_val})")
+            print("=" * 75)
             print(f"Test mAP50:    {val_results.box.map50:.4f}")
             print(f"Test mAP50-95: {val_results.box.map:.4f}")
             print(f"Test Precision:{val_results.box.mp:.4f}")
@@ -366,14 +408,23 @@ train_custom = train_yolo_detector
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train TrackChain YOLOv8n defect detector.")
+    parser = argparse.ArgumentParser(description="Train TrackChain YOLOv8n defect detector (Upgraded Recipe).")
     parser.add_argument("--data", default="data/external/rail_defects/data.yaml", help="Path to data.yaml")
     parser.add_argument("--config", default="ml/configs/detector.yaml", help="Path to config yaml")
-    parser.add_argument("--epochs", type=int, default=None, help="Number of training epochs")
-    parser.add_argument("--batch", type=int, default=None, help="Batch size")
+    parser.add_argument("--epochs", type=int, default=None, help="Number of training epochs (default 80)")
+    parser.add_argument("--batch", type=int, default=None, help="Batch size (default 8 for 960px)")
+    parser.add_argument("--imgsz", type=int, default=None, help="Input resolution (default 960)")
+    parser.add_argument("--freeze", type=int, default=None, help="Number of backbone layers to freeze (default 10)")
+    parser.add_argument("--dropout", type=float, default=None, help="Dropout regularization rate (default 0.1)")
+    parser.add_argument("--erasing", type=float, default=None, help="Random erasing probability (default 0.2)")
+    parser.add_argument("--copy-paste", type=float, default=None, help="Copy-paste augmentation rate (default 0.5)")
+    parser.add_argument("--close-mosaic", type=int, default=None, help="Epochs before end to disable mosaic (default 10)")
+    parser.add_argument("--patience", type=int, default=None, help="Early stopping patience (default 20)")
+    parser.add_argument("--conf", type=float, default=None, help="Validation confidence threshold (default 0.25)")
+    parser.add_argument("--iou", type=float, default=None, help="NMS IoU threshold (default 0.60)")
     parser.add_argument("--device", default="auto", help="Device to train on ('auto', '0' for CUDA GPU, or 'cpu')")
     parser.add_argument("--output-dir", default=None, help="Output directory for checkpoints")
-    parser.add_argument("--resume", action="store_true", help="Resume training")
+    parser.add_argument("--resume", action="store_true", help="Resume training from last checkpoint")
     args = parser.parse_args()
 
     train_yolo_detector(
@@ -381,6 +432,15 @@ if __name__ == "__main__":
         config_path=args.config,
         epochs=args.epochs,
         batch_size=args.batch,
+        img_size=args.imgsz,
+        freeze=args.freeze,
+        dropout=args.dropout,
+        erasing=args.erasing,
+        copy_paste=args.copy_paste,
+        close_mosaic=args.close_mosaic,
+        patience=args.patience,
+        conf=args.conf,
+        iou=args.iou,
         device=args.device,
         output_dir=args.output_dir,
         resume=args.resume,

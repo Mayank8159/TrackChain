@@ -1,6 +1,7 @@
 """
-Comprehensive validation of trained YOLO railway defect model.
+Comprehensive validation of trained YOLO railway defect model (tc.v1 SOTA).
 Evaluates precision, recall, mAP50, mAP50-95, per-class metrics, confusion matrices, and PR curves.
+Default validation operates at conf=0.25 (realistic operating threshold).
 """
 import os
 import sys
@@ -36,7 +37,10 @@ def validate_model(
     data_yaml: str,
     output_dir: str = 'artifacts/validation/yolo',
     split: str = 'test',
-    device: str = 'cpu'
+    conf: float = 0.25,
+    iou: float = 0.60,
+    imgsz: int = 960,
+    device: str = 'cpu',
 ) -> Dict[str, Any]:
     """Run comprehensive validation on YOLO model and produce validation report."""
     if YOLO is None:
@@ -48,26 +52,50 @@ def validate_model(
     abs_output = Path(output_dir) if Path(output_dir).is_absolute() else abs_repo / output_dir
     abs_output.mkdir(parents=True, exist_ok=True)
 
-    print("=" * 70)
-    print("TrackChain YOLO Model Comprehensive Validation")
-    print("=" * 70)
-    print(f"Model:      {abs_model}")
-    print(f"Data YAML:  {abs_data}")
-    print(f"Split:      {split}")
-    print(f"Output Dir: {abs_output}")
+    print("=" * 75)
+    print("TrackChain YOLO Model Comprehensive Validation (tc.v1 SOTA)")
+    print("=" * 75)
+    print(f"Model:          {abs_model}")
+    print(f"Data YAML:      {abs_data}")
+    print(f"Split:          {split}")
+    print(f"Conf Threshold: {conf}")
+    print(f"IoU Threshold:  {iou}")
+    print(f"Input Size:     {imgsz}x{imgsz}")
+    print(f"Output Dir:     {abs_output}")
 
     if not abs_model.exists():
-        raise FileNotFoundError(f"Model weights not found at {abs_model}")
+        # Search for canonical checkpoints in vision checkpoint directory
+        canon = ModelRegistry.CHECKPOINTS_DIR / "vision" / "yolov8n_rail_best.pt"
+        if canon.exists():
+            abs_model = canon
+        else:
+            raise FileNotFoundError(f"Model weights not found at {abs_model}")
 
     model = YOLO(str(abs_model))
 
     # Run validation
-    print(f"\n[1/4] Running validation on {split} set...")
+    print(f"\n[1/4] Running validation on {split} split (conf={conf}, iou={iou})...")
     try:
-        results = model.val(data=str(abs_data), split=split, device=device, verbose=True)
+        results = model.val(
+            data=str(abs_data),
+            split=split,
+            conf=conf,
+            iou=iou,
+            imgsz=imgsz,
+            device=device,
+            verbose=True,
+        )
     except Exception as e:
-        print(f"[WARN] Failed to validate on split='{split}' ({e}). Falling back to 'val'...")
-        results = model.val(data=str(abs_data), split='val', device=device, verbose=True)
+        print(f"[WARN] Validation on split='{split}' encountered '{e}'. Falling back to split='val'...")
+        results = model.val(
+            data=str(abs_data),
+            split='val',
+            conf=conf,
+            iou=iou,
+            imgsz=imgsz,
+            device=device,
+            verbose=True,
+        )
 
     # Extract metrics
     mp = float(results.box.mp)
@@ -80,6 +108,8 @@ def validate_model(
         'precision': mp,
         'recall': mr,
         'f1_score': float(f1),
+        'operating_conf': conf,
+        'operating_iou': iou,
     }
 
     # Extract per-class metrics
@@ -111,7 +141,7 @@ def validate_model(
                         yticklabels=y_labels[:cm.shape[0]])
             plt.xlabel('Predicted')
             plt.ylabel('Ground Truth')
-            plt.title('Railway Defect Detection - Confusion Matrix')
+            plt.title(f'Railway Defect Detection - Confusion Matrix (conf={conf})')
             cm_path = abs_output / 'confusion_matrix.png'
             plt.savefig(cm_path, dpi=300, bbox_inches='tight')
             plt.close()
@@ -123,7 +153,6 @@ def validate_model(
     print("\n[3/4] Generating PR curves...")
     if plt is not None and hasattr(results, 'curves_results'):
         try:
-            # Check for PR curve data
             plt.figure(figsize=(9, 6))
             for i, cls_name in class_names.items():
                 ap_val = class_metrics.get(cls_name, {}).get('AP50', 0.0)
@@ -152,7 +181,7 @@ def validate_model(
         'overall_metrics': metrics,
         'class_metrics': class_metrics,
         'num_parameters': num_params,
-        'model_size_mb': round(file_size_mb, 2)
+        'model_size_mb': round(file_size_mb, 2),
     }
 
     report_path = abs_output / 'validation_report.json'
@@ -160,9 +189,9 @@ def validate_model(
         json.dump(report, f, indent=2)
 
     # Print summary table
-    print("\n" + "=" * 70)
-    print("Validation Results Summary")
-    print("=" * 70)
+    print("\n" + "=" * 75)
+    print(f"Validation Results Summary (conf={conf}, iou={iou})")
+    print("=" * 75)
     print(f"mAP50:       {metrics['mAP50']:.4f}")
     print(f"mAP50-95:    {metrics['mAP50_95']:.4f}")
     print(f"Precision:   {metrics['precision']:.4f}")
@@ -170,11 +199,11 @@ def validate_model(
     print(f"F1 Score:    {metrics['f1_score']:.4f}")
     print(f"Model Size:  {report['model_size_mb']:.2f} MB")
     print(f"Parameters:  {report['num_parameters']:,}")
-    print("-" * 70)
+    print("-" * 75)
     print("Per-Class Performance (AP50):")
     for cls_name, cls_m in class_metrics.items():
         print(f"  {cls_name:22s}: AP50 = {cls_m['AP50']:.4f} | AP50-95 = {cls_m['AP50_95']:.4f}")
-    print("=" * 70)
+    print("=" * 75)
     print(f"Report saved to: {report_path}")
 
     return report
@@ -183,11 +212,14 @@ def validate_model(
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="TrackChain YOLO Validation Suite")
+    parser = argparse.ArgumentParser(description="TrackChain YOLO Validation Suite (tc.v1 SOTA)")
     parser.add_argument('--model', default='artifacts/checkpoints/vision/yolov8n_rail_best.pt', help="Path to .pt weights")
     parser.add_argument('--data', default='data/external/rail_defects_expanded/data.yaml', help="Path to data.yaml")
     parser.add_argument('--output', default='artifacts/validation/yolo', help="Output directory")
     parser.add_argument('--split', default='test', choices=['val', 'test', 'train'])
+    parser.add_argument('--conf', type=float, default=0.25, help="Confidence threshold (default 0.25)")
+    parser.add_argument('--iou', type=float, default=0.60, help="IoU threshold (default 0.60)")
+    parser.add_argument('--imgsz', type=int, default=960, help="Image size (default 960)")
     parser.add_argument('--device', default='cpu')
 
     args = parser.parse_args()
@@ -197,5 +229,8 @@ if __name__ == "__main__":
         data_yaml=args.data,
         output_dir=args.output,
         split=args.split,
+        conf=args.conf,
+        iou=args.iou,
+        imgsz=args.imgsz,
         device=args.device,
     )

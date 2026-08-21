@@ -1,106 +1,97 @@
 # ============================================================================
-# Custom YOLO Training Configuration for Railway Defect Detection
-# Optimized for small datasets with aggressive augmentation
+# TrackChain Custom YOLOv8n Training Configuration for Railway Defect Detection
+# Optimized for small datasets with aggressive data efficiency and anti-overfitting
 # ============================================================================
 
 # Task and mode
 task: detect
 mode: train
 
-# Model architecture
-model: yolov8n.pt  # Start from pretrained weights
+# Model architecture (nano for edge deployment)
+model: yolov8n.pt
 
 # ============================================================================
-# Training Hyperparameters
+# Training Hyperparameters & Overfitting Protection
 # ============================================================================
 
-epochs: 150
-patience: 40  # Early stopping patience
-batch: 16
-imgsz: 640
+epochs: 80
+patience: 20            # Real early stopping upon plateau
+batch: 8                # Fitted for 960x960 input resolution
+imgsz: 960              # 960px input for small-object sensitivity (fasteners, clips, cracks)
+freeze: 10              # Freeze backbone layers to prevent overfitting on small datasets
+dropout: 0.1            # Dropout regularization (was 0.0)
+weight_decay: 0.0005
 
 # Optimizer
 optimizer: AdamW
-lr0: 0.0008  # Initial learning rate (lower for fine-tuning)
-lrf: 0.01    # Final learning rate (lr0 * lrf)
+lr0: 0.001              # Initial learning rate for fine-tuning
+lrf: 0.01               # Final learning rate fraction (lr0 * lrf)
 momentum: 0.937
-weight_decay: 0.0005
 
 # Learning rate scheduling
-cos_lr: true  # Cosine annealing
-warmup_epochs: 5.0
+cos_lr: true            # Cosine annealing
+warmup_epochs: 3.0
 warmup_momentum: 0.8
 warmup_bias_lr: 0.1
 
 # Loss function weights
-box: 7.5      # Box loss weight
-cls: 0.5      # Classification loss weight
-dfl: 1.5      # Distribution focal loss weight
+box: 7.5                # Box loss weight
+cls: 0.5                # Classification loss weight
+dfl: 1.5                # Distribution focal loss weight
 
 # ============================================================================
-# Data Augmentation (AGGRESSIVE for railway defect datasets)
+# Data Efficiency & Aggressive Augmentations
 # ============================================================================
+
+copy_paste: 0.5         # Paste defect instances onto background canvases (was 0.3)
+mixup: 0.15             # MixUp augmentation
+mosaic: 1.0             # 4-image mosaic synthesis
+close_mosaic: 10        # Disable mosaic only for the last 10 epochs (keeps active till ep 70)
+erasing: 0.2            # Controlled random erasing (prevents hallucination)
 
 # Color augmentations
-hsv_h: 0.015      # Hue
-hsv_s: 0.7        # Saturation
-hsv_v: 0.4        # Value (brightness)
+hsv_h: 0.015            # Hue
+hsv_s: 0.7              # Saturation
+hsv_v: 0.4              # Value (brightness)
 
 # Geometric augmentations
-degrees: 15.0     # Rotation
-translate: 0.2    # Translation
-scale: 0.7        # Scale
-shear: 5.0        # Shear
-perspective: 0.001  # Perspective
-flipud: 0.5       # Vertical flip (rails can be upside down / bi-directional)
-fliplr: 0.5       # Horizontal flip
-
-# Mosaic augmentation (combines 4 images)
-mosaic: 1.0
-mixup: 0.15       # MixUp augmentation
-copy_paste: 0.3   # Copy-paste augmentation
-
-# When to disable mosaic (stabilize training at end)
-close_mosaic: 30  # Disable mosaic for last 30 epochs
+degrees: 15.0           # Rotation
+translate: 0.2          # Translation
+scale: 0.7              # Scale
+shear: 5.0              # Shear
+perspective: 0.001      # Perspective
+flipud: 0.5             # Vertical flip (bi-directional rail heads)
+fliplr: 0.5             # Horizontal flip
 
 # ============================================================================
-# Validation and Metrics
+# Validation and Operating Metrics
 # ============================================================================
 
 val: true
 split: val
 save_json: false
 save_hybrid: false
-conf: 0.001       # Confidence threshold for validation
-iou: 0.6          # IoU threshold for NMS
+conf: 0.25              # Realistic operating detection threshold (avoids false-positive explosion)
+iou: 0.60               # NMS IoU threshold
 
 # ============================================================================
-# Hardware and Performance
+# Hardware, Logging & Checkpointing
 # ============================================================================
 
-device: auto      # auto-resolves to '0' if CUDA available, else 'cpu'
+device: auto            # auto-resolves to '0' if CUDA available, else 'cpu'
 workers: 4
 project: artifacts/checkpoints/vision
 name: yolov8n_rail_custom
 exist_ok: true
 pretrained: true
 
-# ============================================================================
-# Logging and Checkpointing
-# ============================================================================
-
 verbose: true
 plots: true
 save: true
-save_period: 10   # Save checkpoint every 10 epochs
+save_period: 10         # Save periodic checkpoints
 save_txt: false
 save_conf: false
 save_crop: false
 
-# ============================================================================
-# Advanced Features
-# ============================================================================
-
-label_smoothing: 0.05
 auto_augment: randaugment
 rect: false

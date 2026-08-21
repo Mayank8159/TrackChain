@@ -1,6 +1,6 @@
 # ============================================================================
 # TrackChain YOLOv8n Defect Detector Configuration (tc.v1 SOTA)
-# Fully integrated hyperparameters, focal loss, augmentations, and domain classes
+# Upgraded for small dataset efficiency, small-object sensitivity & anti-overfitting
 # ============================================================================
 
 task: detect
@@ -9,29 +9,31 @@ mode: train
 model:
   name: "yolov8n.pt"
   architecture: "CSPDarknet-C2f-DecoupledHead"
-  input_size: [640, 640]
-  confidence_threshold: 0.45
-  iou_threshold: 0.50
+  input_size: [960, 960]
+  confidence_threshold: 0.25
+  iou_threshold: 0.60
   max_detections: 100
 
 training:
-  epochs: 150
-  batch_size: 16
+  epochs: 80
+  batch_size: 8
   optimizer: "AdamW"
-  lr0: 0.0008
+  lr0: 0.001
   lrf: 0.01
   momentum: 0.937
   weight_decay: 0.0005
-  warmup_epochs: 5.0
+  warmup_epochs: 3.0
   warmup_momentum: 0.8
   warmup_bias_lr: 0.1
   cos_lr: true
-  patience: 40
-  close_mosaic: 30
+  patience: 20
+  close_mosaic: 10
+  freeze: 10
+  dropout: 0.1
+  erasing: 0.2
   box_loss_weight: 7.5
   cls_loss_weight: 0.5
   dfl_loss_weight: 1.5
-  label_smoothing: 0.05
 
 augmentations:
   hsv_h: 0.015
@@ -46,12 +48,17 @@ augmentations:
   fliplr: 0.5
   mosaic: 1.0
   mixup: 0.15
-  copy_paste: 0.3
+  copy_paste: 0.5
+
+validation:
+  conf: 0.25
+  iou: 0.60
+  split: "test"
 
 sahi:
   enabled: false
-  slice_height: 320
-  slice_width: 320
+  slice_height: 480
+  slice_width: 480
   overlap_height_ratio: 0.2
   overlap_width_ratio: 0.2
 

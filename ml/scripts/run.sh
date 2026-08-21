@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# TrackChain Master ML Training Orchestrator
+# TrackChain Master ML Training Orchestrator (tc.v1 SOTA)
 # Trains all 5 Phase 2 models in dependency order with checkpointing.
 #
 # Usage:
 #   chmod +x ml/scripts/run.sh
 #   ./ml/scripts/run.sh [--epochs-yolo N] [--epochs-bilstm N] [--epochs-vae N]
-#                       [--resume] [--skip-yolo] [--skip-patchcore]
+#                       [--imgsz N] [--batch N] [--resume] [--skip-yolo] [--skip-patchcore]
 #
 # Output:
 #   - Trained weights in artifacts/checkpoints/
@@ -26,10 +26,11 @@ DATA_ROOT="$REPO_ROOT/data"
 
 export PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"
 
-EPOCHS_YOLO=${EPOCHS_YOLO:-50}
+EPOCHS_YOLO=${EPOCHS_YOLO:-80}
 EPOCHS_BILSTM=${EPOCHS_BILSTM:-20}
 EPOCHS_VAE=${EPOCHS_VAE:-30}
-BATCH_SIZE=${BATCH_SIZE:-16}
+BATCH_SIZE=${BATCH_SIZE:-8}
+IMGSZ_YOLO=${IMGSZ_YOLO:-960}
 RESUME=false
 SKIP_YOLO=false
 SKIP_PATCHCORE=false
@@ -64,6 +65,7 @@ while [[ $# -gt 0 ]]; do
         --epochs-yolo)    EPOCHS_YOLO="$2"; shift 2;;
         --epochs-bilstm)  EPOCHS_BILSTM="$2"; shift 2;;
         --epochs-vae)     EPOCHS_VAE="$2"; shift 2;;
+        --imgsz)          IMGSZ_YOLO="$2"; shift 2;;
         --batch)          BATCH_SIZE="$2"; shift 2;;
         --resume)         RESUME=true; shift;;
         --skip-yolo)      SKIP_YOLO=true; shift;;
@@ -82,7 +84,7 @@ START_TIME=$(date +%s)
 header "TrackChain Phase 2 — Master ML Training Pipeline"
 info "Repo root:      $REPO_ROOT"
 info "Compute Device: $DEVICE_INFO"
-info "YOLO epochs:    $EPOCHS_YOLO"
+info "YOLO epochs:    $EPOCHS_YOLO (imgsz=$IMGSZ_YOLO)"
 info "Bi-LSTM epochs: $EPOCHS_BILSTM"
 info "VAE epochs:     $EPOCHS_VAE"
 info "Batch size:     $BATCH_SIZE"
@@ -115,14 +117,14 @@ run_step() {
 # =============================================================================
 header "STEP 1/7: Data Verification & Generation"
 
-if ! python -c "import os
-has_yolo = os.path.exists('$DATA_ROOT/external/rail_defects_expanded/train/images') or os.path.exists('$DATA_ROOT/external/rail_defects/train/images')
-has_patch = os.path.exists('$DATA_ROOT/external/rail_normal_expanded/train/good') or os.path.exists('$DATA_ROOT/external/rail_normal_only/train/good')
-assert has_yolo, 'YOLO dataset missing'
-assert has_patch, 'PatchCore dataset missing'
-print('[OK] Vision datasets verified')" 2>/dev/null; then
-    err "Vision datasets not found. Ensure '$DATA_ROOT/external/rail_defects' and '$DATA_ROOT/external/rail_normal_only' exist."
-    exit 1
+# Synthesize defect dataset if not already present
+if [[ ! -d "$DATA_ROOT/external/rail_defects_synthetic/train/images" && ! -d "$DATA_ROOT/external/rail_defects_expanded/train/images" && ! -d "$DATA_ROOT/external/rail_defects/train/images" ]]; then
+    info "Generating synthetic defect training dataset..."
+    python ml/scripts/generate_synthetic_defects.py \
+        --normal-bank "$DATA_ROOT/external/rail_normal_only" \
+        --output-dir "$DATA_ROOT/external/rail_defects_synthetic" \
+        --samples-per-class 300 \
+        --imgsz "$IMGSZ_YOLO"
 fi
 
 run_step "generate_trc" \
@@ -144,12 +146,14 @@ run_step "generate_normal" \
         --output "$DATA_ROOT/processed/normal_sequences/"
 
 # =============================================================================
-# STEP 2: YOLO Training (Phase 2.1)
+# STEP 2: YOLO Training (Phase 2.1) — Upgraded Recipe
 # =============================================================================
-header "STEP 2/7: YOLOv8n Visual Defect Detector"
+header "STEP 2/7: YOLOv8n Visual Defect Detector (Upgraded Recipe)"
 
 YOLO_DATA="$DATA_ROOT/external/rail_defects/data.yaml"
-if [[ -f "$DATA_ROOT/external/rail_defects_expanded/data.yaml" ]]; then
+if [[ -f "$DATA_ROOT/external/rail_defects_synthetic/data.yaml" ]]; then
+    YOLO_DATA="$DATA_ROOT/external/rail_defects_synthetic/data.yaml"
+elif [[ -f "$DATA_ROOT/external/rail_defects_expanded/data.yaml" ]]; then
     YOLO_DATA="$DATA_ROOT/external/rail_defects_expanded/data.yaml"
 fi
 
@@ -162,6 +166,14 @@ else
             --data "$YOLO_DATA" \
             --epochs "$EPOCHS_YOLO" \
             --batch "$BATCH_SIZE" \
+            --imgsz "$IMGSZ_YOLO" \
+            --freeze 10 \
+            --dropout 0.1 \
+            --erasing 0.2 \
+            --copy-paste 0.5 \
+            --close-mosaic 10 \
+            --patience 20 \
+            --conf 0.25 \
             --device "$TRAIN_DEVICE"
 
     run_step "export_yolo_onnx" \

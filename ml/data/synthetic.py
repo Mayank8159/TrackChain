@@ -1,7 +1,20 @@
-# Generate synthetic vision and geometry data with known fault signatures.
+"""
+Generate synthetic vision and geometry data with known fault signatures (tc.v1 SOTA).
+Provides multi-modal generation for:
+  - Continuous track geometry conforming to EN 13848-1
+  - Procedural vision defect injection (crack, missing fastener, defective clip, obstruction)
+"""
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional, Any
 import numpy as np
+import cv2
+
+from ml.data.synthetic_vision import (
+    SyntheticRailDefectGenerator,
+    sanitize_bbox,
+    CLASS_MAPPING,
+    CLASS_NAMES,
+)
 
 
 def generate_synthetic_geometry(
@@ -58,31 +71,42 @@ def generate_synthetic_geometry(
 
 def generate_synthetic_defect_image(
     defect_type: str = "crack",
-    height: int = 256,
-    width: int = 256,
-) -> np.ndarray:
-    """Generate synthetic grayscale/RGB rail surface patches with defect textures."""
-    img = np.random.normal(120, 15, (height, width, 3)).astype(np.uint8)
-    
-    # Draw dark rail head gradient
-    img[:, :, :] = np.clip(img + 30, 0, 255)
+    height: int = 640,
+    width: int = 640,
+) -> Tuple[np.ndarray, Optional[List[float]]]:
+    """
+    Generate high-fidelity synthetic rail surface patch with specific defect and YOLO bounding box.
+    """
+    # Create base track texture
+    base = np.zeros((height, width, 3), dtype=np.uint8)
+    ballast = np.array([80, 75, 65], dtype=np.float32)
+    noise = np.random.normal(0, 15, (height, width, 3))
+    base[:] = np.clip(ballast + noise, 0, 255).astype(np.uint8)
 
+    # Add rails
+    rail_w = int(width * 0.08)
+    for offset in [int(width * 0.32), int(width * 0.68)]:
+        cv2.rectangle(base, (offset - rail_w // 2, 0), (offset + rail_w // 2, height), (55, 55, 60), -1)
+        cv2.line(base, (offset, 0), (offset, height), (140, 140, 150), 3)
+
+    gen = SyntheticRailDefectGenerator()
     if defect_type == "crack":
-        # Draw zigzag dark line
-        pts = []
-        x = np.random.randint(40, width - 40)
-        for y in range(40, height - 40, 10):
-            x += np.random.randint(-6, 7)
-            pts.append((x, y))
-        for i in range(len(pts) - 1):
-            p1, p2 = pts[i], pts[i + 1]
-            # Simple line rasterization
-            img[p1[1]:p2[1]+1, min(p1[0], p2[0]):max(p1[0], p2[0])+2] = 20
-    elif defect_type == "spalling":
-        # Elliptical cavity
-        cy, cx = height // 2, width // 2
-        y, x = np.ogrid[:height, :width]
-        mask = ((x - cx) / 25) ** 2 + ((y - cy) / 15) ** 2 <= 1
-        img[mask] = np.random.normal(40, 10, img[mask].shape)
+        return gen.inject_crack(base)
+    elif defect_type in ["missing_fastener", "fastener"]:
+        return gen.inject_missing_fastener(base)
+    elif defect_type in ["defective_clip", "damaged_fastener", "clip"]:
+        return gen.inject_defective_clip(base)
+    elif defect_type in ["obstruction", "debris"]:
+        return gen.inject_obstruction(base)
+    else:
+        return gen.inject_crack(base)
 
-    return img
+
+__all__ = [
+    "generate_synthetic_geometry",
+    "generate_synthetic_defect_image",
+    "SyntheticRailDefectGenerator",
+    "sanitize_bbox",
+    "CLASS_MAPPING",
+    "CLASS_NAMES",
+]

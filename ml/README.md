@@ -195,9 +195,32 @@ class CalibratedSignal:
 |---|---|---|---|
 | **Rail Defects YOLO** | Object Detection | `data/external/rail_defects/` | $>1,000$ labeled images |
 | **Rail Normal PatchCore** | Anomaly Memory Bank | `data/external/rail_normal_only/` | $>500$ nominal surface images |
+| **Synthetic Rail Defects** | Defect Generation (Canvas Inpainting/Overlay) | `data/external/rail_defects_synthetic/` | $>1,200$ synthesized images |
 | **Synthetic TRC Telemetry** | Physics Resampling | `data/processed/synthetic_trc_run_001.csv` | 1,000m @ 100Hz |
 | **5-Class Geometry Data** | Bi-LSTM Training | `data/processed/geometry_sequences/` | 5,000 sequences (CSV & NPZ) |
 | **Normal Geometry Data** | Seq-VAE Training | `data/processed/normal_sequences/` | 3,000 sequences (CSV) |
+
+---
+
+## 🎨 Synthetic Defect Generation & SAHI Multiplier
+
+Since real defect photos are limited, TrackChain provides high-fidelity **copy-paste and inpainting defect synthesis** using the clean normal-track image bank as canvas:
+
+```bash
+# 1. Synthesize domain-accurate defects on normal track images (cracks, missing fasteners, defective clips, obstructions)
+python ml/scripts/generate_synthetic_defects.py \
+    --normal-bank data/external/rail_normal_only \
+    --output-dir data/external/rail_defects_synthetic \
+    --samples-per-class 300 \
+    --imgsz 960
+
+# 2. (Optional) Run SAHI overlapping slicing multiplier on high-res dataset
+python ml/scripts/slice_sahi_dataset.py \
+    --input-dir data/external/rail_defects_synthetic \
+    --output-dir data/external/rail_defects_sahi_sliced \
+    --slice-size 480 \
+    --overlap-ratio 0.20
+```
 
 ---
 
@@ -206,16 +229,38 @@ class CalibratedSignal:
 Execute the automated pipeline from the repository root:
 
 ```bash
-# 1. Master Training Orchestration (Dependency Order + Checkpointing)
-./ml/scripts/run.sh
+# 1. Master Training Orchestration (Dependency Order + Checkpointing + Upgraded YOLO Recipe)
+./ml/scripts/run.sh --epochs-yolo 80 --imgsz 960 --batch 8
 
-# 2. Master Calibration Sync (Fits Temperature & Sigmoid Thresholds)
+# 2. Standalone Upgraded YOLOv8 Detector Training
+python ml/scripts/train_detector.py \
+    --data data/external/rail_defects_synthetic/data.yaml \
+    --config ml/configs/detector.yaml \
+    --epochs 80 \
+    --batch 8 \
+    --imgsz 960 \
+    --freeze 10 \
+    --dropout 0.1 \
+    --erasing 0.2 \
+    --copy-paste 0.5 \
+    --close-mosaic 10 \
+    --patience 20 \
+    --conf 0.25
+
+# 3. Comprehensive Test-Split Validation (conf=0.25)
+python ml/scripts/validate_yolo.py \
+    --model artifacts/checkpoints/vision/yolov8n_rail_best.pt \
+    --data data/external/rail_defects_synthetic/data.yaml \
+    --conf 0.25 \
+    --imgsz 960
+
+# 4. Master Calibration Sync (Fits Temperature & Sigmoid Thresholds)
 ./ml/scripts/calibrate.sh
 
-# 3. Comprehensive Test Suite Runner (All 21 Test Modules)
+# 5. Comprehensive Test Suite Runner (All 21 Test Modules)
 ./ml/scripts/test.sh
 
-# 4. Generate Formal Phase 2 Completion Report
+# 6. Generate Formal Phase 2 Completion Report
 python ml/scripts/evaluate.py --phase 2 --output docs/phase2_completion_report.md
 ```
 
@@ -227,10 +272,10 @@ Convert PyTorch checkpoints to optimized edge runtimes:
 
 ```bash
 # Export YOLOv8 to high-performance ONNX
-python ml/inference/exporters.py --model artifacts/checkpoints/yolov8n_rail_best.pt --format onnx
+python ml/inference/exporters.py --model artifacts/checkpoints/vision/yolov8n_rail_best.pt --format onnx
 
 # Apply dynamic INT8 quantization for edge CPU execution (Raspberry Pi 5 / Jetson Orin Nano)
-python ml/inference/exporters.py --model artifacts/checkpoints/yolov8n_rail_best.pt --format int8
+python ml/inference/exporters.py --model artifacts/checkpoints/vision/yolov8n_rail_best.pt --format int8
 ```
 
 ---
