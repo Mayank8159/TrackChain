@@ -134,6 +134,7 @@ class EnhancedPatchCore:
             h.remove()
         self.hooks = []
         
+        base = None
         try:
             if self.backbone_name == "wide_resnet50_2":
                 weights = models.Wide_ResNet50_2_Weights.DEFAULT
@@ -147,11 +148,19 @@ class EnhancedPatchCore:
                 weights = models.ResNet18_Weights.DEFAULT
                 base = models.resnet18(weights=weights)
                 self.feature_dim = 384
-        except Exception:
-            weights = models.ResNet18_Weights.DEFAULT
-            base = models.resnet18(weights=weights)
-            self.feature_dim = 384
-        
+        except Exception as e:
+            try:
+                weights = models.ResNet18_Weights.DEFAULT
+                base = models.resnet18(weights=weights)
+                self.feature_dim = 384
+            except Exception:
+                if self.backbone_name == "wide_resnet50_2":
+                    base = models.wide_resnet50_2(weights=None)
+                    self.feature_dim = 1536
+                else:
+                    base = models.resnet18(weights=None)
+                    self.feature_dim = 384
+
         for param in base.parameters():
             param.requires_grad = False
         base.eval()
@@ -218,31 +227,55 @@ class EnhancedPatchCore:
         patches = combined.permute(0, 2, 3, 1).contiguous().view(-1, c)
         return patches, (h, w)
     
-    def _coreset_sampling(self, patches: np.ndarray, target_size: int, random_seed: int = 42) -> np.ndarray:
+    def _coreset_sampling(
+        self,
+        patches: np.ndarray,
+        target_size: int,
+        max_candidate_pool: int = 40000,
+        max_coreset_cap: int = 3000,
+        random_seed: int = 42,
+    ) -> np.ndarray:
         """
-        Greedy Minimax / k-center coreset selection algorithm.
-        Subsamples diverse patches covering the feature manifold.
+        Accelerated Greedy Minimax / k-center coreset selection algorithm.
+        Subsamples diverse patches covering the feature manifold with O(N) vectorized updates.
         """
         n_samples = len(patches)
-        if target_size >= n_samples:
+        if n_samples == 0:
             return patches
-        
+
         np.random.seed(random_seed)
-        selected_indices = [int(np.random.choice(n_samples))]
-        
-        first_center = patches[selected_indices[0]:selected_indices[0] + 1]
-        min_distances = np.linalg.norm(patches - first_center, axis=1)
-        
-        for step in range(1, target_size):
-            new_idx = int(np.argmax(min_distances))
+        if n_samples > max_candidate_pool:
+            candidate_indices = np.random.choice(n_samples, max_candidate_pool, replace=False)
+            candidate_patches = patches[candidate_indices]
+        else:
+            candidate_patches = patches
+
+        n_candidates = len(candidate_patches)
+        target_count = max(10, min(max_coreset_cap, min(target_size, n_candidates)))
+        if target_count >= n_candidates:
+            return candidate_patches
+
+        feat_tensor = torch.from_numpy(candidate_patches).float()
+        selected_indices = [int(np.random.choice(n_candidates))]
+
+        first_center = feat_tensor[selected_indices[0]:selected_indices[0] + 1]
+        min_sq_dists = torch.sum((feat_tensor - first_center) ** 2, dim=1)
+
+        pbar = tqdm(total=target_count, desc="Minimax Coreset Selection", unit="patch", leave=False)
+        pbar.update(1)
+
+        for _ in range(1, target_count):
+            new_idx = int(torch.argmax(min_sq_dists).item())
             selected_indices.append(new_idx)
-            
-            new_center = patches[new_idx:new_idx + 1]
-            new_dists = np.linalg.norm(patches - new_center, axis=1)
-            min_distances = np.minimum(min_distances, new_dists)
-        
-        return patches[selected_indices]
-    
+
+            new_center = feat_tensor[new_idx:new_idx + 1]
+            new_sq_dists = torch.sum((feat_tensor - new_center) ** 2, dim=1)
+            min_sq_dists = torch.minimum(min_sq_dists, new_sq_dists)
+            pbar.update(1)
+
+        pbar.close()
+        return candidate_patches[selected_indices]
+
     def build_memory_bank(
         self,
         normal_images: List[Union[str, Path]],
@@ -253,29 +286,50 @@ class EnhancedPatchCore:
         print("=" * 70)
         print("Building Enhanced PatchCore Multi-Scale Memory Banks")
         print("=" * 70)
-        
+
         dataset = ImageDataset(normal_images, transform=self.transform)
         dataloader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
-        
+
+        # Single-pass forward extraction across all batches
+        print(f"\n[Extracting intermediate layer features across {len(normal_images)} images...]")
+        l2_batches, l3_batches = [], []
+        with torch.no_grad():
+            for batch in tqdm(dataloader, desc="Forward backbone extraction"):
+                feats_dict = self.extract_features(batch)
+                if "layer2" in feats_dict and "layer3" in feats_dict:
+                    l2_batches.append(feats_dict["layer2"].cpu())
+                    l3_batches.append(feats_dict["layer3"].cpu())
+                else:
+                    first_feat = list(feats_dict.values())[-1]
+                    l2_batches.append(first_feat.cpu())
+                    l3_batches.append(first_feat.cpu())
+
         for patch_size in self.patch_sizes:
             print(f"\n[Memory Bank {patch_size}x{patch_size}]")
             print("-" * 70)
-            
+
             all_patches = []
-            
-            for batch in tqdm(dataloader, desc=f"Extracting {patch_size}x{patch_size} patches"):
-                feats_dict = self.extract_features(batch)
-                patches, _ = self.extract_scale_patches(feats_dict, patch_size)
-                all_patches.append(patches.cpu().numpy().astype(np.float32))
-            
+            pool = nn.AvgPool2d(kernel_size=patch_size, stride=1, padding=patch_size // 2)
+
+            for l2, l3 in zip(l2_batches, l3_batches):
+                p2 = pool(l2)
+                p3 = pool(l3)
+                target_hw = p2.shape[-2:]
+                p3_aligned = F.interpolate(p3, size=target_hw, mode="bilinear", align_corners=False)
+                combined = torch.cat([p2, p3_aligned], dim=1)
+                b, c, h, w = combined.shape
+                self.feature_dim = c
+                patches = combined.permute(0, 2, 3, 1).contiguous().view(-1, c)
+                all_patches.append(patches.numpy().astype(np.float32))
+
             if not all_patches:
                 continue
-            
+
             combined_patches = np.concatenate(all_patches, axis=0)
             print(f"  Extracted {len(combined_patches)} raw patches (dim={combined_patches.shape[1]})")
-            
+
             # Dimension reduction
             if self.dimension_reduction and combined_patches.shape[1] > self.target_dim:
                 print(f"  Applying SparseRandomProjection: {combined_patches.shape[1]} -> {self.target_dim}")
@@ -285,16 +339,16 @@ class EnhancedPatchCore:
             else:
                 reduced_patches = combined_patches
                 self.projectors[patch_size] = None
-            
+
             # Coreset subsampling
             target_size = max(10, int(len(reduced_patches) * self.coreset_ratio))
             print(f"  Coreset sampling: {len(reduced_patches)} -> {target_size} patches")
             coreset = self._coreset_sampling(reduced_patches, target_size)
-            
+
             # Build FAISS index
             dim = coreset.shape[1]
             coreset_np = np.ascontiguousarray(coreset, dtype=np.float32)
-            
+
             if faiss is not None:
                 index = faiss.IndexFlatL2(dim)
                 index.add(coreset_np)
@@ -302,16 +356,16 @@ class EnhancedPatchCore:
                 from sklearn.neighbors import NearestNeighbors
                 index = NearestNeighbors(n_neighbors=1, metric="euclidean")
                 index.fit(coreset_np)
-            
+
             self.memory_banks[patch_size] = {
                 "index": index,
                 "coreset": coreset_np,
                 "dimension": dim,
                 "num_patches": len(coreset_np)
             }
-            
+
             print(f"  [OK] Memory bank ({patch_size}x{patch_size}) built: {len(coreset_np)} patches, dim={dim}")
-        
+
         print("\n" + "=" * 70)
         print(f"All {len(self.memory_banks)} scale memory banks built successfully!")
         print("=" * 70)

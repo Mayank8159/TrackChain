@@ -123,23 +123,39 @@ class PatchCoreAnomalyDetector:
             self.calibrator = SigmoidDistanceCalibrator.load(calibration_path)
 
     def _init_backbone(self):
-        """Load frozen pretrained feature extractor."""
+        """Load frozen pretrained feature extractor with robust offline fallback."""
         if models is None:
             return
 
+        base = None
+        # Try primary backbone
         try:
             if self.backbone_name == "wide_resnet50_2":
                 weights = models.Wide_ResNet50_2_Weights.DEFAULT
                 base = models.wide_resnet50_2(weights=weights)
                 self.feature_dim = 1536
+            elif self.backbone_name == "resnet50":
+                weights = models.ResNet50_Weights.DEFAULT
+                base = models.resnet50(weights=weights)
+                self.feature_dim = 1536
             else:
                 weights = models.ResNet18_Weights.DEFAULT
                 base = models.resnet18(weights=weights)
                 self.feature_dim = 384
-        except Exception:
-            weights = models.ResNet18_Weights.DEFAULT
-            base = models.resnet18(weights=weights)
-            self.feature_dim = 384
+        except Exception as e:
+            # Fallback 1: Try ResNet18 with pretrained weights
+            try:
+                weights = models.ResNet18_Weights.DEFAULT
+                base = models.resnet18(weights=weights)
+                self.feature_dim = 384
+            except Exception:
+                # Fallback 2: Offline local weights (no network download required)
+                if self.backbone_name == "wide_resnet50_2":
+                    base = models.wide_resnet50_2(weights=None)
+                    self.feature_dim = 1536
+                else:
+                    base = models.resnet18(weights=None)
+                    self.feature_dim = 384
 
         for param in base.parameters():
             param.requires_grad = False

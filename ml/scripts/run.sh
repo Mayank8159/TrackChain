@@ -200,7 +200,9 @@ else
     run_step "train_patchcore" \
         "$CHECKPOINT_DIR/vision/.patchcore_train.done" \
         python ml/scripts/train_anomaly.py \
-            --coreset_ratio 0.10 \
+            --coreset_ratio 0.08 \
+            --max_coreset 3000 \
+            --batch_size 32 \
             --fpr_target 0.01 \
             --device "$TRAIN_DEVICE"
 fi
