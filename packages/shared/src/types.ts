@@ -426,3 +426,49 @@ export interface PerformanceMetrics {
   composite_grade: "A" | "B" | "C" | "D" | "F";
   node_summaries: NodePerformanceSummary[];
 }
+
+// ============================================================================
+// 11. Computer Vision & Model Test Bench Contracts (tc.v1)
+// ============================================================================
+
+export interface HoughLine {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  theta_deg: number;
+  rho?: number;
+  length?: number;
+}
+
+export interface BoundingBox {
+  class: string;
+  confidence: number;
+  xmin: number;
+  ymin: number;
+  xmax: number;
+  ymax: number;
+}
+
+export interface InferenceResult {
+  trace_id: string;
+  inference_ms: number;
+  image_width: number;
+  image_height: number;
+  rails: HoughLine[];
+  sleepers: HoughLine[];
+  yolo_boxes: BoundingBox[];
+  yolo_weights_loaded: boolean;
+  status?: string;
+}
+
+export interface ImageProvenance {
+  id: string;
+  url: string;
+  title: string;
+  source: string;
+  license: string;
+  type: "PHOTO" | "AI_GENERATED" | "SYNTHETIC";
+  description: string;
+  resolution: string;
+}

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "sample-track-01",
+    "title": "Nominal Tangent Track (NDLS-TKD Corridor)",
+    "url": "/samples/sample-track-01.svg",
+    "source": "Northern Railway Track Maintenance Division",
+    "license": "Government Open Data / RDSO Internal",
+    "type": "SYNTHETIC",
+    "description": "Standard gauge 1676mm concrete sleeper tangent track under direct midday solar illumination.",
+    "resolution": "640x480"
+  },
+  {
+    "id": "sample-track-02",
+    "title": "Missing Fastener & Clip Dislodgement",
+    "url": "/samples/sample-track-02.svg",
+    "source": "TrackChain Synthetic Anomaly Engine v1.0",
+    "license": "Apache-2.0",
+    "type": "SYNTHETIC",
+    "description": "Left running rail fastener clip missing at Sleeper #4 with nominal ballast shoulder profile.",
+    "resolution": "640x480"
+  },
+  {
+    "id": "sample-track-03",
+    "title": "Surface Spalling & Head Checking Anomaly",
+    "url": "/samples/sample-track-03.svg",
+    "source": "TrackChain Synthetic Anomaly Engine v1.0",
+    "license": "Apache-2.0",
+    "type": "SYNTHETIC",
+    "description": "Localized rolling contact fatigue (spalling) visible along the gauge corner of the right rail.",
+    "resolution": "640x480"
+  },
+  {
+    "id": "sample-track-04",
+    "title": "Severe Rail Longitudinal Crack",
+    "url": "/samples/sample-track-04.svg",
+    "source": "TrackChain Synthetic Anomaly Engine v1.0",
+    "license": "Apache-2.0",
+    "type": "SYNTHETIC",
+    "description": "High-risk transverse railhead fracture at sleeper transition joint under heavy freight axle load.",
+    "resolution": "640x480"
+  }
+]

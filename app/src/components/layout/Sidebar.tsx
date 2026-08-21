@@ -19,6 +19,7 @@ import {
   X,
   Radio,
   Gauge,
+  FlaskConical,
 } from "lucide-react";
 import { useUIStore } from "../../stores/ui-store";
 import { cn } from "../../lib/utils";
@@ -35,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/sessions", label: "Inspection Runs", tag: "RUNS", icon: RouteIcon },
   { href: "/defects", label: "Defect Registry", tag: "LOG", icon: AlertTriangle },
   { href: "/map", label: "GIS Track Map", tag: "GPS", icon: MapIcon },
+  { href: "/lab", label: "Model Test Lab", tag: "AI", icon: FlaskConical },
   { href: "/performance", label: "Performance", tag: "SRE", icon: Gauge },
   { href: "/devices", label: "Edge Hardware", tag: "NODE", icon: Cpu },
   { href: "/video", label: "Video & Telemetry", tag: "SYNC", icon: VideoIcon },
