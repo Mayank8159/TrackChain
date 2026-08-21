@@ -472,3 +472,51 @@ export interface ImageProvenance {
   description: string;
   resolution: string;
 }
+
+// ============================================================================
+// 12. Oracle: Predictive Maintenance & Degradation Forecasting (tc.oracle.v1)
+// ============================================================================
+
+/** A single point on the 180-day degradation timeline (90 historical + 90 forecast). */
+export interface ForecastPoint {
+  timestamp: number;        // Epoch ms
+  day: number;              // -90 … +90 (0 = today)
+  tqi_actual?: number;      // Historical actuals (days ≤ 0)
+  tqi_predicted?: number;   // Probabilistic forecast (days > 0)
+  lower_bound_95?: number;  // 95% conformal prediction interval — lower
+  upper_bound_95?: number;  // 95% conformal prediction interval — upper
+  lower_bound_80?: number;  // 80% conformal prediction interval — lower
+  upper_bound_80?: number;  // 80% conformal prediction interval — upper
+}
+
+/** Probability of a track segment surviving N days without breaching the critical limit. */
+export interface SurvivalProbability {
+  horizon_days: 30 | 60 | 90;
+  probability: number;  // 0.0 – 1.0
+}
+
+/** A named track segment with its forecasting context (Oracle engine). */
+export interface OracleSegment {
+  id: string;
+  label: string;       // e.g. "KM 42–45"
+  trackClass: "CLASS_A" | "CLASS_B" | "CLASS_C";
+  currentTqi: number;
+  breachDayEstimate: number | null; // null = no breach within 90 days
+  survivalProbs: SurvivalProbability[];
+  forecast: ForecastPoint[];
+}
+
+/** Auto-generated RDSO Work Order triggered by the Oracle engine. */
+export interface WorkOrder {
+  id: string;
+  segmentId: string;
+  segmentLabel: string;
+  recommendedAction: string;
+  recommendedDate: string;       // ISO date string
+  urgencyDays: number;           // Days until predicted breach
+  estimatedCrewSize: number;
+  estimatedDurationHours: number;
+  estimatedTqiRecovery: number;  // +N TQI points post-intervention
+  generatedAt: string;           // ISO timestamp
+}
+

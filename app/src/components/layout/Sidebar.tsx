@@ -20,6 +20,7 @@ import {
   Radio,
   Gauge,
   FlaskConical,
+  BrainCircuit,
 } from "lucide-react";
 import { useUIStore } from "../../stores/ui-store";
 import { cn } from "../../lib/utils";
@@ -33,10 +34,11 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Control Room", tag: "LIVE", icon: LayoutDashboard },
+  { href: "/forecast", label: "Oracle Forecast", tag: "AI", icon: BrainCircuit },
   { href: "/sessions", label: "Inspection Runs", tag: "RUNS", icon: RouteIcon },
   { href: "/defects", label: "Defect Registry", tag: "LOG", icon: AlertTriangle },
   { href: "/map", label: "GIS Track Map", tag: "GPS", icon: MapIcon },
-  { href: "/lab", label: "Model Test Lab", tag: "AI", icon: FlaskConical },
+  { href: "/lab", label: "Model Test Lab", tag: "LAB", icon: FlaskConical },
   { href: "/performance", label: "Performance", tag: "SRE", icon: Gauge },
   { href: "/devices", label: "Edge Hardware", tag: "NODE", icon: Cpu },
   { href: "/video", label: "Video & Telemetry", tag: "SYNC", icon: VideoIcon },

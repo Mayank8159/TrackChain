@@ -9,7 +9,11 @@ import type {
   DashboardSummary,
   AlertEvent,
   LineGeometry,
+  ForecastPoint,
+  OracleSegment,
+  SurvivalProbability,
 } from "./types";
+import { RDSO_LIMITS, type TrackClass } from "./rdso-thresholds";
 
 // ============================================================================
 // 1. Deterministic Monitoring Sessions
@@ -563,3 +567,175 @@ export const MOCK_PERFORMANCE_METRICS: PerformanceMetrics = {
     },
   ],
 };
+
+// ============================================================================
+// 12. Oracle: Deterministic Degradation Forecast Generator
+// Produces a mathematically sound, reproducible 180-day TQI degradation curve
+// (Days -90 to 0 = historical actuals, Days 1 to 90 = probabilistic forecast).
+// ============================================================================
+
+/**
+ * Deterministic pseudo-random seeded noise (replaces Math.random()).
+ * Uses a linear congruential generator — same seed → same sequence every time.
+ */
+function seededLCG(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    return (s >>> 0) / 0xffffffff; // [0, 1)
+  };
+}
+
+/**
+ * Generate a 180-day TQI degradation forecast for a track segment.
+ *
+ * @param segmentSeed    - Integer seed (different per segment for determinism)
+ * @param startTqi       - TQI value at day -90 (beginning of historical window)
+ * @param decayRate      - Daily TQI decay (e.g. 0.08 = 0.08 TQI points/day)
+ * @param thresholdTqi   - RDSO critical limit for this track class
+ */
+export function generateForecast(
+  segmentSeed: number,
+  startTqi: number,
+  decayRate: number,
+  thresholdTqi: number
+): ForecastPoint[] {
+  const noise = seededLCG(segmentSeed);
+  const TODAY = Date.now();
+  const DAY_MS = 86_400_000;
+  const points: ForecastPoint[] = [];
+
+  for (let day = -90; day <= 90; day++) {
+    const timestamp = TODAY + day * DAY_MS;
+
+    // Base exponential decay curve anchored at startTqi
+    const baseDecay = startTqi - decayRate * (day + 90);
+
+    // Seasonal oscillation (simulating ballast settlement cycle ~30-day period)
+    const seasonal = 2.5 * Math.sin((2 * Math.PI * (day + 90)) / 30);
+
+    // Gaussian noise (deterministic via seeded LCG)
+    const gaussNoise = () => {
+      // Box-Muller: two uniform samples → one Gaussian
+      const u1 = noise() + 1e-10;
+      const u2 = noise();
+      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    };
+
+    if (day <= 0) {
+      // ─── Historical window: actual TQI values ───
+      const tqi_actual = Math.max(
+        20,
+        Math.min(100, baseDecay + seasonal + gaussNoise() * 1.2)
+      );
+      points.push({ timestamp, day, tqi_actual });
+    } else {
+      // ─── Forecast window: prediction + conformal bands ───
+      // Prediction: continue the decay curve with slightly less noise
+      const tqi_predicted = Math.max(
+        20,
+        Math.min(100, baseDecay + seasonal * 0.6 + gaussNoise() * 0.8)
+      );
+
+      // Conformal prediction intervals widen with forecast horizon
+      // σ grows as sqrt(day) — representing increasing epistemic uncertainty
+      const sigma = 1.4 * Math.sqrt(day);
+      const upper_95 = Math.min(100, tqi_predicted + 1.96 * sigma);
+      const lower_95 = Math.max(20, tqi_predicted - 1.96 * sigma);
+      const upper_80 = Math.min(100, tqi_predicted + 1.28 * sigma);
+      const lower_80 = Math.max(20, tqi_predicted - 1.28 * sigma);
+
+      points.push({
+        timestamp,
+        day,
+        tqi_predicted,
+        upper_bound_95: upper_95,
+        lower_bound_95: lower_95,
+        upper_bound_80: upper_80,
+        lower_bound_80: lower_80,
+      });
+    }
+  }
+  return points;
+}
+
+/**
+ * Calculate survival probability: P(TQI > threshold throughout horizon).
+ * Approximated as the fraction of days in the horizon where lower_bound_80 > threshold,
+ * adjusted by the uncertainty envelope width.
+ */
+export function computeSurvivalProbs(
+  forecast: ForecastPoint[],
+  thresholdTqi: number
+): SurvivalProbability[] {
+  const horizons: (30 | 60 | 90)[] = [30, 60, 90];
+
+  return horizons.map((h) => {
+    const window = forecast.filter((p) => p.day !== undefined && p.day > 0 && p.day <= h);
+    if (window.length === 0) return { horizon_days: h, probability: 1.0 };
+
+    // Fraction of days where even the pessimistic lower 80% bound stays above threshold
+    const safe = window.filter(
+      (p) => (p.lower_bound_80 ?? p.tqi_predicted ?? 100) > thresholdTqi
+    ).length;
+    const raw = safe / window.length;
+
+    // Apply a slight dampening toward center for realism
+    const probability = Math.max(0.01, Math.min(0.999, raw * 0.92 + 0.02));
+    return { horizon_days: h, probability };
+  });
+}
+
+/**
+ * Find the first forecast day where tqi_predicted crosses below thresholdTqi.
+ * Returns null if no breach is predicted in the 90-day window.
+ */
+export function findBreachDay(
+  forecast: ForecastPoint[],
+  thresholdTqi: number
+): number | null {
+  const future = forecast.filter((p) => (p.day ?? -1) > 0);
+  const breachPoint = future.find(
+    (p) => (p.tqi_predicted ?? 100) < thresholdTqi
+  );
+  return breachPoint?.day ?? null;
+}
+
+/** Build a full OracleSegment (for the given class) from seeds. */
+function buildSegment(
+  id: string,
+  label: string,
+  trackClass: TrackClass,
+  seed: number,
+  startTqi: number,
+  decayRate: number
+): OracleSegment {
+  const limit = RDSO_LIMITS[trackClass];
+  const forecast = generateForecast(seed, startTqi, decayRate, limit.tqi_critical);
+  const currentPoint = forecast.find((p) => p.day === 0);
+  const currentTqi = currentPoint?.tqi_actual ?? startTqi;
+  const survivalProbs = computeSurvivalProbs(forecast, limit.tqi_critical);
+  const breachDayEstimate = findBreachDay(forecast, limit.tqi_critical);
+
+  return {
+    id,
+    label,
+    trackClass,
+    currentTqi: Math.round(currentTqi * 10) / 10,
+    breachDayEstimate,
+    survivalProbs,
+    forecast,
+  } satisfies OracleSegment;
+}
+
+/** Pre-built deterministic segments used throughout the Oracle module. */
+export const MOCK_TRACK_SEGMENTS: OracleSegment[] = [
+  // Segment with breach predicted ~Day 45 (tuned for good demo)
+  buildSegment("seg-km42-45", "KM 42–45 (NZM-FDB)", "CLASS_B", 42_001, 92, 0.305),
+  // Segment already in caution zone — Class A strict limit
+  buildSegment("seg-km28-31", "KM 28–31 (NDLS-NZM)", "CLASS_A", 28_002, 88, 0.22),
+  // Healthy freight segment
+  buildSegment("seg-km99-102", "KM 99–102 (PWL-KSV)", "CLASS_C", 99_003, 85, 0.14),
+  // Rapidly degrading segment — imminent breach
+  buildSegment("seg-km58-61", "KM 58–61 (FDB-PWL)", "CLASS_B", 58_004, 79, 0.48),
+];

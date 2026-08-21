@@ -16,6 +16,7 @@ import { KPICard } from "@/components/dashboard/KPICard";
 import { RouteLineDiagram } from "@/components/dashboard/RouteLineDiagram";
 import { LiveAlertsFeed } from "@/components/dashboard/LiveAlertsFeed";
 import { RecentDefects } from "@/components/dashboard/RecentDefects";
+import { PredictiveAlertsWidget } from "@/components/forecast/PredictiveAlertsWidget";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { DataError } from "@/components/ui/DataError";
@@ -199,6 +200,9 @@ export default function OperationalDashboard() {
         {/* Right Column: Recent Defects */}
         <RecentDefects />
       </div>
+
+      {/* 5. Predictive Intelligence Widget */}
+      <PredictiveAlertsWidget />
     </div>
   );
 }
