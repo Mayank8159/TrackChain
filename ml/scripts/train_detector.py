@@ -58,6 +58,16 @@ def train_yolo_detector(
 
     target_device = resolve_device(device)
 
+    # Sanitize and dynamically set path in data.yaml for current OS/environment
+    if abs_data_yaml.exists():
+        with open(abs_data_yaml, "r") as f:
+            dy = yaml.safe_load(f) or {}
+        dataset_dir = abs_data_yaml.parent.resolve().as_posix()
+        if dy.get("path") != dataset_dir:
+            dy["path"] = dataset_dir
+            with open(abs_data_yaml, "w") as f:
+                yaml.dump(dy, f, sort_keys=False)
+
     print(f"[INFO] Starting TrackChain YOLOv8n Training Pipeline")
     print(f"       Dataset YAML: {abs_data_yaml}")
     print(f"       Config:       {abs_config_path}")
@@ -116,12 +126,15 @@ def train_yolo_detector(
         verbose=True,
     )
 
-    # Copy best weights to canonical checkpoint location
+    # Copy best weights to canonical checkpoint locations
     best_pt = abs_output_dir / "yolov8n_rail_run" / "weights" / "best.pt"
-    canonical_best = ModelRegistry.get_trained_weights("vision", "yolo_rail_v0.1.pt")
+    canonical_best = abs_output_dir / "yolov8n_rail_best.pt"
+    alias_best = abs_output_dir / "yolo_rail_v0.1.pt"
+
     if best_pt.exists():
         shutil.copy(best_pt, canonical_best)
-        print(f"[OK] Checkpoint saved: {canonical_best}")
+        shutil.copy(best_pt, alias_best)
+        print(f"[OK] Checkpoint saved: {canonical_best} and {alias_best}")
 
     print(f"\n[SUCCESS] Training completed. Best model saved in {canonical_best}")
     return results

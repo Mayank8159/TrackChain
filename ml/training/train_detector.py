@@ -3,6 +3,13 @@ ml/training/train_detector.py
 Fine-tune the YOLOv8 defect detector on railway defect imagery (tc.v1 SOTA).
 """
 
+import sys
+from pathlib import Path
+
+repo_root = Path(__file__).resolve().parent.parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
 from ml.scripts.train_detector import train_yolo_detector
 
 __all__ = ["train_yolo_detector"]
@@ -14,7 +21,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", default="ml/configs/detector.yaml", help="Path to detector.yaml")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--batch", type=int, default=16, help="Batch size")
-    parser.add_argument("--device", default="cpu", help="Device ('cpu' or 'cuda')")
+    parser.add_argument("--device", default="auto", help="Device ('auto', '0' for CUDA GPU, or 'cpu')")
     parser.add_argument("--output-dir", default=None, help="Output directory for checkpoints")
     args = parser.parse_args()
 

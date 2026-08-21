@@ -123,6 +123,12 @@ print('[OK] Vision datasets verified')" 2>/dev/null; then
     exit 1
 fi
 
+run_step "generate_trc" \
+    "$CHECKPOINT_DIR/.trc_data.done" \
+    python ml/scripts/generate_trc_telemetry.py \
+        --mode trc \
+        --output "$DATA_ROOT/processed/synthetic_trc_run_001.csv"
+
 run_step "generate_geometry" \
     "$CHECKPOINT_DIR/.geometry_data.done" \
     python ml/scripts/generate_trc_telemetry.py \
