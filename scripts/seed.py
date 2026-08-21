@@ -1,8 +1,6 @@
-# Seed the database with sample sessions, telemetry, and defects (tc.v1).
-
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import numpy as np
 
 # Add backend directory to sys.path
@@ -33,7 +31,7 @@ def seed_database():
                 status="online",
                 battery_voltage_v=12.4,
                 cpu_temp_c=48.5,
-                last_seen_at=datetime.utcnow(),
+                last_seen_at=datetime.now(timezone.utc),
             )
             db.add(device)
             db.commit()
@@ -45,6 +43,7 @@ def seed_database():
             print("[INFO] Session already exists, skipping.")
             return
 
+        now = datetime.now(timezone.utc)
         session_obj = MonitoringSession(
             id=session_id,
             device_id=device_id,
@@ -54,7 +53,7 @@ def seed_database():
             track_id="IR-NR-01",
             track_section="New Delhi to Mathura Junction (Km 0.0 to 140.0)",
             track_direction="down",
-            start_time=datetime.utcnow() - timedelta(hours=2),
+            start_time=now - timedelta(hours=2),
             start_chainage_m=0.0,
             end_chainage_m=140000.0,
             status="running",
@@ -68,7 +67,6 @@ def seed_database():
 
         # Create sample telemetry records
         telemetry_points = []
-        now = datetime.utcnow()
         for i in range(200):
             chainage = i * 100.0  # every 100m
             has_anomaly = 40 <= i <= 43
@@ -80,7 +78,7 @@ def seed_database():
                 speed_mps=30.5,
                 speed_kmh=110.0 + float(np.random.normal(0, 2)),
                 vibration_rms=2.6 if has_anomaly else 0.85 + float(np.random.normal(0, 0.1)),
-                track_gauge_mm=1448.0 if has_anomaly else 1435.0 + float(np.random.normal(0, 0.5)),
+                track_gauge_mm=1690.0 if has_anomaly else 1676.0 + float(np.random.normal(0, 0.5)),
                 cant_mm=15.0 + float(np.sin(i / 10.0) * 5),
                 twist_mm_per_m=3.8 if has_anomaly else 0.8 + float(np.random.normal(0, 0.2)),
                 vertical_unevenness_mm=4.5 if has_anomaly else 1.0,
