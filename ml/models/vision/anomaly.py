@@ -276,6 +276,16 @@ class PatchCoreAnomalyDetector:
         if self.memory_bank is None:
             return 0.0, np.zeros((224, 224), dtype=np.float32)
 
+        if isinstance(image, (str, Path)):
+            if cv2 is not None:
+                img_bgr = cv2.imread(str(image))
+                if img_bgr is not None:
+                    image = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                else:
+                    return 0.0, np.zeros((224, 224), dtype=np.float32)
+            else:
+                image = Image.open(str(image)).convert("RGB")
+
         if isinstance(image, np.ndarray):
             if image.ndim == 2:
                 pil_img = Image.fromarray(image).convert("RGB")
@@ -283,8 +293,10 @@ class PatchCoreAnomalyDetector:
                 pil_img = Image.fromarray(image)
             else:
                 pil_img = Image.fromarray(image[:, :, :3])
-        else:
+        elif isinstance(image, Image.Image):
             pil_img = image.convert("RGB")
+        else:
+            pil_img = Image.fromarray(np.asarray(image)).convert("RGB")
 
         orig_w, orig_h = pil_img.size
         tensor = self.transform(pil_img).unsqueeze(0).to(self.device)
@@ -357,18 +369,32 @@ class PatchCoreAnomalyDetector:
                 return None
             return (float(x_indices.min()), float(y_indices.min()), float(x_indices.max()), float(y_indices.max()))
 
-    def predict(self, frame: np.ndarray) -> List[CalibratedSignal]:
+    def predict(self, frame: Union[np.ndarray, str, Path, Any]) -> List[CalibratedSignal]:
         """
         Run PatchCore inference and return contract-compliant CalibratedSignal.
-        Frame should be a HxWxC uint8 NumPy array.
+        Frame should be a HxWxC uint8 NumPy array, PIL Image, or file path.
         """
-        if self.enhanced_model is not None and self.enhanced_model.memory_banks:
-            return self.enhanced_model.predict_signals(frame)
+        if isinstance(frame, (str, Path)):
+            if cv2 is not None:
+                img_bgr = cv2.imread(str(frame))
+                if img_bgr is None:
+                    return []
+                frame = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            else:
+                from PIL import Image
+                try:
+                    frame = np.array(Image.open(str(frame)).convert("RGB"))
+                except Exception:
+                    return []
+
+        if self.enhanced_model is not None and hasattr(self.enhanced_model, "memory_banks") and self.enhanced_model.memory_banks:
+            if hasattr(self.enhanced_model, "predict_signals"):
+                return self.enhanced_model.predict_signals(frame)
 
         if self.memory_bank is None:
             return []
 
-        h, w = frame.shape[:2]
+        h, w = frame.shape[:2] if hasattr(frame, "shape") else (224, 224)
         raw_distance, anomaly_map = self.predict_raw(frame)
 
         calibrated_score = self.calibrator.scale(raw_distance)

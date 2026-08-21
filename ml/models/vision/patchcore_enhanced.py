@@ -384,15 +384,22 @@ class EnhancedPatchCore:
         if not self.memory_banks:
             return {"ensemble": 0.0}, 0.0, np.zeros((224, 224), dtype=np.float32)
         
-        if isinstance(image, np.ndarray):
+        if isinstance(image, (str, Path)):
+            try:
+                pil_img = Image.open(str(image)).convert("RGB")
+            except Exception:
+                return {"ensemble": 0.0}, 0.0, np.zeros((224, 224), dtype=np.float32)
+        elif isinstance(image, np.ndarray):
             if image.ndim == 2:
                 pil_img = Image.fromarray(image).convert("RGB")
             elif image.shape[2] == 3:
                 pil_img = Image.fromarray(image)
             else:
                 pil_img = Image.fromarray(image[:, :, :3])
-        else:
+        elif isinstance(image, Image.Image):
             pil_img = image.convert("RGB")
+        else:
+            pil_img = Image.fromarray(np.asarray(image)).convert("RGB")
         
         orig_w, orig_h = pil_img.size
         tensor = self.transform(pil_img).unsqueeze(0).to(self.device)
@@ -500,14 +507,26 @@ class EnhancedPatchCore:
                 return None
             return (float(x_indices.min()), float(y_indices.min()), float(x_indices.max()), float(y_indices.max()))
     
-    def predict_signals(self, frame: np.ndarray) -> List[CalibratedSignal]:
+    def predict_signals(self, frame: Union[np.ndarray, str, Path, Any]) -> List[CalibratedSignal]:
         """
         Run inference on image frame and return contract-compliant CalibratedSignal.
         """
+        if isinstance(frame, (str, Path)):
+            if cv2 is not None:
+                img_bgr = cv2.imread(str(frame))
+                if img_bgr is None:
+                    return []
+                frame = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            else:
+                try:
+                    frame = np.array(Image.open(str(frame)).convert("RGB"))
+                except Exception:
+                    return []
+
         if not self.memory_banks:
             return []
         
-        h, w = frame.shape[:2]
+        h, w = frame.shape[:2] if hasattr(frame, "shape") else (224, 224)
         scores, ensemble_dist, anomaly_map = self.predict_raw_multiscale(frame)
         
         # Scale through calibrated sigmoid parameters

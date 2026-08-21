@@ -1,10 +1,12 @@
-"""
-Unified calibration script for all 5 TrackChain Phase 2 models (tc.v1 SOTA).
-Ensures all models output mathematically calibrated probabilities in [0.0, 1.0] with universal decision threshold at 0.50.
-"""
-
+import sys
 import json
 from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 
 def verify_calibration_sync() -> bool:
@@ -92,17 +94,17 @@ def verify_calibration_sync() -> bool:
     all_synced = all(sync_status.values())
 
     for stream, synced in sync_status.items():
-        status = "🟢 [SYNCHRONIZED]" if synced else "🔴 [UNSYNCED]"
+        status = "[SYNCHRONIZED]" if synced else "[UNSYNCED]   "
         print(f"  {status} {stream}")
 
     print("\n" + "=" * 75)
     if all_synced:
-        print("✅ ALL 5 TRACKCHAIN MODELS CALIBRATED & SYNCHRONIZED!")
+        print("[SUCCESS] ALL 5 TRACKCHAIN MODELS CALIBRATED & SYNCHRONIZED!")
         print("   - Probability Domain: [0.0, 1.0]")
         print("   - Universal Firing Threshold: 0.50")
         print("   - Fusion Ready: Cross-Modal Attention & Multi-Modal Transformer Engine")
     else:
-        print("⚠️ Pipeline partially calibrated. Complete missing training steps to achieve full sync.")
+        print("[WARNING] Pipeline partially calibrated. Complete missing training steps to achieve full sync.")
     print("=" * 75)
 
     return all_synced

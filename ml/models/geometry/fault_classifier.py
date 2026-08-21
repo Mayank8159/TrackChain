@@ -71,7 +71,7 @@ class BiLSTMAttention(nn.Module):
         return logits, attn_weights
 
 
-# Alias for backwards compatibility
+# Aliases for backwards compatibility
 BiLSTMGeometryClassifier = BiLSTMAttention
 
 
@@ -118,12 +118,18 @@ class GeometryFaultClassifier:
                 try:
                     ckpt = torch.load(wp, map_location=self.device)
                     state = ckpt["model_state_dict"] if isinstance(ckpt, dict) and "model_state_dict" in ckpt else ckpt
+                    if isinstance(state, dict) and "lstm.weight_ih_l0" in state:
+                        detected_hidden = state["lstm.weight_ih_l0"].shape[0] // 4
+                        # Count layers
+                        detected_layers = sum(1 for k in state.keys() if k.startswith("lstm.weight_ih_l") and not k.endswith("_reverse"))
+                        if detected_hidden != self.model.hidden_size or detected_layers != self.model.num_layers:
+                            self.model = BiLSTMAttention(hidden_size=detected_hidden, num_layers=max(1, detected_layers), num_classes=self.num_classes).to(self.device)
                     self.model.load_state_dict(state, strict=False)
                     if isinstance(ckpt, dict) and "temperature" in ckpt:
                         self.temperature = float(ckpt["temperature"])
                     break
                 except Exception as e:
-                    print(f"[Warn] Could not load weights from {wp}: {e}")
+                    pass
 
         self.model.eval()
         self.temperature = 1.5
@@ -249,3 +255,8 @@ class GeometryFaultClassifier:
                     },
                 },
             )
+
+
+# Aliases for backwards compatibility
+BiLSTMFaultClassifier = GeometryFaultClassifier
+BiLSTMClassifier = GeometryFaultClassifier

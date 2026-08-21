@@ -14,6 +14,12 @@ from pathlib import Path
 import numpy as np
 import torch
 
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 repo_root = Path(__file__).resolve().parent.parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
@@ -21,7 +27,7 @@ if str(repo_root) not in sys.path:
 from ml.core.registry import ModelRegistry
 from ml.core.schema import CalibratedSignal, SignalType, DefectClass
 from ml.models.geometry.physics_detector import EN13848PhysicsThresholdDetector
-from ml.models.geometry.fault_classifier import BiLSTMFaultClassifier
+from ml.models.geometry.fault_classifier import GeometryFaultClassifier, BiLSTMFaultClassifier
 from ml.models.geometry.sequence_vae import SequenceVAEDetector
 from ml.calibration.unified_calibrator import UnifiedCalibrator
 
@@ -52,9 +58,9 @@ def verify_sync():
         if p.exists():
             with open(p, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            print(f"  🟢 {name:25s} -> Found (method={data.get('method', 'standard')})")
+            print(f"  [OK]   {name:25s} -> Found (method={data.get('method', 'standard')})")
         else:
-            print(f"  🟡 {name:25s} -> Not found on disk (using default SOTA fallback profile)")
+            print(f"  [WARN] {name:25s} -> Not found on disk (using default SOTA fallback profile)")
 
     # -------------------------------------------------------------------------
     # 2. Verify Geometry Models (Physics, Bi-LSTM, Seq-VAE)
@@ -71,18 +77,18 @@ def verify_sync():
         "cross_level_mm": np.array([1.0, 2.0, 3.0, 1.0]),
     }
     signals_physics = physics.evaluate_features(dummy_geom)
-    print(f"  🟢 EN 13848 Physics: Emitted {len(signals_physics)} signal(s), Top Value={signals_physics[0].value:.3f} (Fired={signals_physics[0].fired})")
+    print(f"  [OK] EN 13848 Physics: Emitted {len(signals_physics)} signal(s), Top Value={signals_physics[0].value:.3f} (Fired={signals_physics[0].fired})")
 
     # B. Bi-LSTM Fault Classifier
-    bilstm = BiLSTMFaultClassifier(device=device)
+    bilstm = GeometryFaultClassifier(device=device)
     dummy_seq = np.random.randn(80, 5).astype(np.float32)
     signal_bilstm = bilstm.predict(dummy_seq)
-    print(f"  🟢 Bi-LSTM Classifier: Emitted signal={signal_bilstm.label.value}, Value={signal_bilstm.value:.3f} (Fired={signal_bilstm.fired})")
+    print(f"  [OK] Bi-LSTM Classifier: Emitted signal={signal_bilstm.label.value}, Value={signal_bilstm.value:.3f} (Fired={signal_bilstm.fired})")
 
     # C. Sequence VAE Novelty Detector
     vae = SequenceVAEDetector(device=device)
     signal_vae = vae.predict(dummy_seq)
-    print(f"  🟢 Seq-VAE Detector: Emitted signal={signal_vae.label.value}, Value={signal_vae.value:.3f} (Fired={signal_vae.fired})")
+    print(f"  [OK] Seq-VAE Detector: Emitted signal={signal_vae.label.value}, Value={signal_vae.value:.3f} (Fired={signal_vae.fired})")
 
     # -------------------------------------------------------------------------
     # 3. Verify Vision Models (PatchCore & YOLO)
@@ -92,7 +98,7 @@ def verify_sync():
     patchcore = PatchCoreAnomalyDetector(device=device)
     dummy_img_tensor = torch.randn(1, 3, 224, 224).to(device)
     feats, shape = patchcore.extract_features(dummy_img_tensor)
-    print(f"  🟢 PatchCore Anomaly: Extracted Multi-Scale Feature Tensor shape={feats.shape} (Dim={feats.shape[1]})")
+    print(f"  [OK] PatchCore Anomaly: Extracted Multi-Scale Feature Tensor shape={feats.shape} (Dim={feats.shape[1]})")
 
     # -------------------------------------------------------------------------
     # 4. Verify Unified Calibrator Sync Contract
@@ -109,10 +115,10 @@ def verify_sync():
     for sig in calibrated_signals:
         val = sig.value
         assert 0.0 <= val <= 1.0, f"Signal {sig.name} value {val} out of [0, 1] bounds!"
-        print(f"  ✅ Stream: {sig.name:25s} | Calibrated Probability: {val:.4f} | Threshold: {sig.threshold:.2f} | Fired: {sig.fired}")
+        print(f"  [SYNC] Stream: {sig.name:25s} | Calibrated Probability: {val:.4f} | Threshold: {sig.threshold:.2f} | Fired: {sig.fired}")
 
     print("\n" + "=" * 80)
-    print("🎯 SOTA MULTI-MODAL SYNCHRONIZATION CONTRACT VERIFIED SUCCESSFULLY!")
+    print("[SUCCESS] SOTA MULTI-MODAL SYNCHRONIZATION CONTRACT VERIFIED SUCCESSFULLY!")
     print("   - All 5 model streams output rigorous probabilities in [0.0, 1.0].")
     print("   - Decision boundary synchronized at universal 0.50 threshold.")
     print("   - Ready for Multi-Modal Transformer / Cross-Attention Fusion.")
