@@ -1,6 +1,4 @@
-# Pydantic schemas for ML signals, fusion decisions, calibration, and registry (tc.v1 SOTA).
-
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from pydantic import Field
 from src.schemas.common import BaseContractModel, IdempotentRequest
@@ -17,7 +15,7 @@ class MLSignalBase(BaseContractModel):
     label: Optional[str] = None
     bbox: Optional[List[float]] = None  # [x1, y1, x2, y2]
     explanation: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class MLSignalCreate(MLSignalBase):
@@ -46,7 +44,7 @@ class SegmentDecisionPayload(BaseContractModel):
     primary_fault: Optional[str] = None
     all_model_signals: List[MLSignalBase] = Field(default_factory=list)
     evidence_reference: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class CalibrationArtifactSchema(BaseContractModel):

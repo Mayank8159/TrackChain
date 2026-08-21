@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from src.services.alerts import register_subscriber, unregister_subscriber
 
-router = APIRouter(prefix="/api/alerts", tags=["Alerts"])
+router = APIRouter(prefix="/alerts", tags=["Alerts"])
 
 
 @router.get("/stream")

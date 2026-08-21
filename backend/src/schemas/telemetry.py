@@ -1,6 +1,4 @@
-# Pydantic schemas for telemetry samples, batch ingestion, and frame processing (tc.v1).
-
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 from pydantic import Field
 from src.schemas.common import BaseContractModel, IdempotentRequest
@@ -8,7 +6,7 @@ from src.schemas.common import BaseContractModel, IdempotentRequest
 
 class TelemetrySampleBase(BaseContractModel):
     chainage_m: float = Field(..., description="Distance along track in meters")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     segment_id: Optional[str] = None
 
     # Spatial & Kinematics

@@ -1,7 +1,7 @@
 # ORM models: devices, sessions, track_segments, telemetry, media, ml_signals, defects, calibration, registry, alerts, ingestion_keys (tc.v1 SOTA).
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     String,
@@ -18,6 +18,11 @@ from sqlalchemy.orm import relationship
 from src.db.session import Base
 
 
+def utc_now():
+    """Return current timezone-aware UTC datetime."""
+    return datetime.now(timezone.utc)
+
+
 class IngestionKey(Base):
     __tablename__ = "ingestion_keys"
 
@@ -25,7 +30,7 @@ class IngestionKey(Base):
     entity_type = Column(String(32), nullable=False)  # telemetry, defects, ml_signals
     entity_id = Column(String(64), nullable=True)
     response_payload = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 class Device(Base):
@@ -39,10 +44,11 @@ class Device(Base):
     imu_model = Column(String(128), nullable=True)
     gnss_model = Column(String(128), nullable=True)
     status = Column(String(32), default="offline", nullable=False)
+    api_key_hash = Column(String(256), nullable=True)
     battery_voltage_v = Column(Float, nullable=True)
     cpu_temp_c = Column(Float, nullable=True)
     last_seen_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     sessions = relationship("MonitoringSession", back_populates="device")
 
@@ -58,7 +64,7 @@ class MonitoringSession(Base):
     track_id = Column(String(128), nullable=False, index=True)
     track_section = Column(String(255), nullable=False)
     track_direction = Column(String(16), default="both", nullable=False)
-    start_time = Column(DateTime, default=datetime.utcnow, nullable=False)
+    start_time = Column(DateTime, default=utc_now, nullable=False)
     end_time = Column(DateTime, nullable=True)
     start_chainage_m = Column(Float, default=0.0)
     end_chainage_m = Column(Float, default=0.0)
@@ -67,7 +73,7 @@ class MonitoringSession(Base):
     defects_count = Column(Integer, default=0)
     operator_name = Column(String(128), nullable=True)
     weather = Column(String(64), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     device = relationship("Device", back_populates="sessions")
     segments = relationship("TrackSegment", back_populates="session", cascade="all, delete-orphan")
@@ -106,7 +112,7 @@ class TelemetryRecord(Base):
     session_id = Column(String(64), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     device_id = Column(String(64), ForeignKey("devices.device_id", ondelete="SET NULL"), nullable=True)
     segment_id = Column(String(64), ForeignKey("track_segments.segment_id", ondelete="SET NULL"), nullable=True, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = Column(DateTime, default=utc_now, nullable=False, index=True)
     chainage_m = Column(Float, nullable=False, index=True)
 
     # Spatial & Kinematics
@@ -168,7 +174,7 @@ class MediaAsset(Base):
     chainage_end_m = Column(Float, nullable=True)
     upload_status = Column(String(32), default="pending", nullable=False)
     checksum = Column(String(64), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     session = relationship("MonitoringSession", back_populates="media_assets")
 
@@ -190,7 +196,7 @@ class MLSignal(Base):
     label = Column(String(64), nullable=True)
     bbox = Column(JSON, nullable=True)  # [x1, y1, x2, y2]
     explanation = Column(Text, nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = Column(DateTime, default=utc_now, nullable=False)
 
     session = relationship("MonitoringSession", back_populates="ml_signals")
     segment = relationship("TrackSegment", back_populates="ml_signals")
@@ -213,7 +219,7 @@ class DefectEvent(Base):
     chainage_m = Column(Float, nullable=False, index=True)
     chainage_start_m = Column(Float, nullable=True)
     chainage_end_m = Column(Float, nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = Column(DateTime, default=utc_now, nullable=False, index=True)
 
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
@@ -231,7 +237,7 @@ class DefectEvent(Base):
 
     description = Column(Text, nullable=True)
     status = Column(String(32), default="open", nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
     acknowledged_at = Column(DateTime, nullable=True)
     acknowledged_by = Column(String(128), nullable=True)
     resolved_at = Column(DateTime, nullable=True)
@@ -254,7 +260,7 @@ class CalibrationArtifact(Base):
     temperature = Column(Float, nullable=True)
     validation_dataset = Column(String(255), nullable=False)
     metrics_summary = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 class ModelRegistry(Base):
@@ -269,7 +275,7 @@ class ModelRegistry(Base):
     trained_on = Column(String(255), nullable=True)
     metrics = Column(JSON, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 class Alert(Base):
@@ -283,6 +289,21 @@ class Alert(Base):
     acknowledged = Column(Boolean, default=False, nullable=False)
     acknowledged_by = Column(String(128), nullable=True)
     acknowledged_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     session = relationship("MonitoringSession", back_populates="alerts")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, default=utc_now, nullable=False, index=True)
+    actor_type = Column(String(32), nullable=False)  # device, user, system
+    actor_id = Column(String(64), nullable=False, index=True)
+    action = Column(String(64), nullable=False, index=True)  # device.registered, defect.created, session.started
+    resource_type = Column(String(64), nullable=True)  # device, defect, session, media
+    resource_id = Column(String(64), nullable=True)
+    details = Column(JSON, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(256), nullable=True)

@@ -1,6 +1,4 @@
-# Pydantic schemas for defect events, explainability signals, and operational incident management (tc.v1 SOTA).
-
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from pydantic import Field
 from src.schemas.common import BaseContractModel
@@ -39,7 +37,7 @@ class DefectEventCreate(DefectEventBase):
     device_id: Optional[str] = None
     segment_id: Optional[str] = None
     idempotency_key: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     supporting_signals: Optional[List[MLSignalCreate]] = Field(default_factory=list)
 
 

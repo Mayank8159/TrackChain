@@ -1,7 +1,7 @@
 # Idempotent request deduplication service (tc.v1 SOTA).
 
 import json
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 from src.db.models import IngestionKey
 
@@ -32,8 +32,8 @@ def record_idempotency(
     db: Session,
     idempotency_key: Optional[str],
     entity_type: str,
-    entity_id: Optional[str],
     response_payload: Dict[str, Any],
+    entity_id: Optional[str] = None,
 ):
     """Store idempotency key and response payload after successful insertion."""
     if not idempotency_key:

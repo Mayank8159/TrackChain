@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger("trackchain.alerts")
 
@@ -30,7 +30,7 @@ async def broadcast_event(event_type: str, data: Dict[str, Any]):
     payload = {
         "event": event_type,
         "data": data,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     for q in _subscribers:
         try:
@@ -42,21 +42,26 @@ async def broadcast_event(event_type: str, data: Dict[str, Any]):
         unregister_subscriber(dq)
 
 
+async def broadcast_alert(defect_event: Dict[str, Any]):
+    """Async broadcast method for critical and high defect alerts."""
+    await broadcast_event("defect_alert", defect_event)
+
+
 def dispatch_defect_alert(defect: Any):
     """Dispatch instant notifications for high and critical railway defects."""
-    if hasattr(defect, "severity") and defect.severity in ["high", "critical"]:
+    if hasattr(defect, "severity") and str(defect.severity).lower() in ["high", "critical"]:
         class_name = getattr(defect, "defect_class", "anomaly")
         chainage = getattr(defect, "chainage_m", 0.0)
         conf = getattr(defect, "confidence", 0.0)
         session_id = getattr(defect, "session_id", "unknown")
+        severity_val = getattr(defect, "severity", "high")
 
         logger.warning(
-            f"[ALERT] CRITICAL RAILWAY DEFECT ALERT: [{class_name.upper()}] "
-            f"detected at Chainage {(chainage / 1000):.3f} km. "
-            f"Confidence: {conf:.2%}. Session: {session_id}"
+            f"[ALERT] CRITICAL RAILWAY DEFECT ALERT: [{str(class_name).upper()}] "
+            f"detected at Chainage {(float(chainage) / 1000):.3f} km. "
+            f"Confidence: {float(conf):.2%}. Session: {session_id}"
         )
 
-        # Trigger async broadcast in running event loop if active
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
@@ -64,11 +69,11 @@ def dispatch_defect_alert(defect: Any):
                     broadcast_event(
                         "defect_alert",
                         {
-                            "defect_class": class_name,
-                            "severity": defect.severity,
-                            "chainage_m": chainage,
-                            "confidence": conf,
-                            "session_id": session_id,
+                            "defect_class": str(class_name),
+                            "severity": str(severity_val),
+                            "chainage_m": float(chainage),
+                            "confidence": float(conf),
+                            "session_id": str(session_id),
                         },
                     )
                 )

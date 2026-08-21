@@ -17,12 +17,14 @@ except ImportError:
     Mangum = None
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import get_settings
 from src.core.logging import setup_logging
 from src.db.session import engine, Base
+from src.services.observability import RequestTraceMiddleware, metrics_endpoint
+from src.services.circuit_breaker import CircuitBreakerOpenError
 from src.schemas.telemetry import (
     ProcessFrameRequest,
     ProcessFrameResponse,
@@ -39,6 +41,8 @@ from src.api.routes import (
     ml,
     alerts,
 )
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
 # Setup structured logging
 logger = setup_logging()
@@ -56,6 +60,9 @@ app = FastAPI(
     description="TrackChain Integrated Track Monitoring & Edge AI Backend API (tc.v1)",
 )
 
+# Tracing & Metrics Middleware
+app.add_middleware(RequestTraceMiddleware)
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -65,26 +72,51 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount API Routers (Standard /api routes)
-app.include_router(health.router)
-app.include_router(telemetry.router)
-app.include_router(defects.router)
-app.include_router(sessions.router)
-app.include_router(media.router)
-app.include_router(devices.router)
-app.include_router(dashboard.router)
-app.include_router(ml.router)
-app.include_router(alerts.router)
 
-# Mount API v1 Routers (/api/v1 alias support)
-app.include_router(telemetry.router, prefix="/api/v1")
-app.include_router(defects.router, prefix="/api/v1")
-app.include_router(sessions.router, prefix="/api/v1")
-app.include_router(media.router, prefix="/api/v1")
-app.include_router(devices.router, prefix="/api/v1")
-app.include_router(dashboard.router, prefix="/api/v1")
-app.include_router(ml.router, prefix="/api/v1")
-app.include_router(alerts.router, prefix="/api/v1")
+@app.exception_handler(CircuitBreakerOpenError)
+async def circuit_breaker_handler(request: Request, exc: CircuitBreakerOpenError):
+    """Graceful degradation when external services or circuit breakers are open."""
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "service_degraded",
+            "message": exc.message,
+            "retry_after": exc.retry_after,
+        },
+        headers={"Retry-After": str(exc.retry_after)},
+    )
+
+
+@app.get("/metrics", tags=["Observability"])
+async def metrics():
+    """Prometheus OpenMetrics scraping endpoint."""
+    return await metrics_endpoint()
+
+
+# Mount Health probes at root
+app.include_router(health.router)
+
+# Group domain routers into unified API sub-router
+api_router = APIRouter()
+api_router.include_router(telemetry.router)
+api_router.include_router(defects.router)
+api_router.include_router(sessions.router)
+api_router.include_router(media.router)
+api_router.include_router(devices.router)
+api_router.include_router(dashboard.router)
+api_router.include_router(ml.router)
+api_router.include_router(alerts.router)
+
+# Mount API endpoints under both /api and /api/v1
+app.include_router(api_router, prefix="/api")
+app.include_router(api_router, prefix="/api/v1")
+
+
+@app.get("/warmup", tags=["Health"])
+@app.get("/api/v1/warmup", tags=["Health"])
+def warmup_handler():
+    """Lightweight ping endpoint to keep serverless Lambda functions warm and prevent cold starts."""
+    return {"status": "warm", "timestamp": time.time(), "service": "trackchain-backend"}
 
 
 # ---------------------------------------------------------------------------

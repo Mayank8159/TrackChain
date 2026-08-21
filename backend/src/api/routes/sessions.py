@@ -10,10 +10,11 @@ from src.schemas.sessions import SessionStartRequest, SessionResponse
 # Backward compatibility alias
 SessionCreate = SessionStartRequest
 
-router = APIRouter(prefix="/api/sessions", tags=["Sessions"])
+router = APIRouter(prefix="/sessions", tags=["Sessions"])
 
 
 @router.post("", response_model=SessionResponse)
+@router.post("/start", response_model=SessionResponse)
 def create_session(payload: SessionStartRequest, db: Session = Depends(get_db_session)):
     """Create a new track inspection session."""
     ses = MonitoringSession(

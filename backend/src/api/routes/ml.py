@@ -11,7 +11,7 @@ from src.schemas.ml import (
     MLSignalBatchRequest,
 )
 
-router = APIRouter(prefix="/api/ml", tags=["ML Signals"])
+router = APIRouter(prefix="/ml", tags=["ML Signals"])
 
 
 @router.post("/signals/batch", response_model=dict)

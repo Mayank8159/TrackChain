@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: TrackChain SOTA Serverless API Stack with RDS Proxy, Redis ElastiCache, S3 Media Bucket, Lambda Layer, and Automated Warmup
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1024
+    Runtime: python3.11
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        ENVIRONMENT: production
+        LOG_LEVEL: INFO
+        DATABASE_URL: !Sub "postgresql+psycopg2://${DBUser}:${DBPassword}@${RDSEndpoint}:5432/trackchain"
+        REDIS_URL: !Sub "redis://${ElastiCacheRedisEndpoint}:6379/0"
+        S3_BUCKET_NAME: !Ref MediaBucket
+        JWT_SECRET_KEY: !Ref JWTSecret
+        API_KEY_SECRET: !Ref APIKeySecret
+        REQUEST_SIGNING_SECRET: !Ref RequestSigningSecret
+
+Parameters:
+  DBUser:
+    Type: String
+    Default: trackchain
+  DBPassword:
+    Type: String
+    NoEcho: true
+  RDSEndpoint:
+    Type: String
+    Default: trackchain-db.cluster-cxyz.us-east-1.rds.amazonaws.com
+  ElastiCacheRedisEndpoint:
+    Type: String
+    Default: trackchain-redis.cache.amazonaws.com
+  JWTSecret:
+    Type: String
+    NoEcho: true
+  APIKeySecret:
+    Type: String
+    NoEcho: true
+  RequestSigningSecret:
+    Type: String
+    NoEcho: true
+
+Resources:
+  # Main FastAPI Lambda Function
+  TrackChainAPI:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: trackchain-api
+      Handler: src.main.handler
+      CodeUri: ./
+      Layers:
+        - !Ref TrackChainDependenciesLayer
+      Events:
+        ApiRoot:
+          Type: Api
+          Properties:
+            Path: /
+            Method: ANY
+        ApiProxy:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref MediaBucket
+
+  # Lambda Layer for Heavy Dependencies
+  TrackChainDependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: trackchain-dependencies-layer
+      ContentUri: lambda_layer/trackchain-layer.zip
+      CompatibleRuntimes:
+        - python3.11
+      RetentionPolicy: Retain
+
+  # S3 Media Bucket with CORS for direct upload and HLS streaming
+  MediaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "trackchain-media-${AWS::AccountId}"
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldUploads
+            Status: Enabled
+            ExpirationInDays: 180
+
+  # Scheduled CloudWatch Event Rule to keep Lambda warm
+  WarmupSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Prevent Lambda cold starts with 5-minute ping
+      ScheduleExpression: rate(5 minutes)
+      Targets:
+        - Arn: !GetAtt TrackChainAPI.Arn
+          Id: WarmupTarget
+          Input: '{"path": "/api/v1/warmup", "httpMethod": "GET"}'
+
+  # Permission for CloudWatch to invoke Lambda
+  WarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TrackChainAPI
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt WarmupSchedule.Arn
+
+Outputs:
+  ApiEndpoint:
+    Description: Production API Gateway URL
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  S3MediaBucket:
+    Description: S3 Media Storage Bucket
+    Value: !Ref MediaBucket

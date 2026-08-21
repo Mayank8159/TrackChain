@@ -12,12 +12,16 @@ class Settings(BaseSettings):
 
     # General
     PROJECT_NAME: str = "TrackChain Backend API"
-    VERSION: str = "0.1.0"
+    VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
+    DEBUG: bool = False
 
-    # Database
+    # Database (PostgreSQL / TimescaleDB)
     DATABASE_URL: str = "postgresql+psycopg2://trackchain:trackchain_secret@localhost:5432/trackchain"
+
+    # Redis (Rate limiting and caching)
+    REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
     # S3 / MinIO
     S3_ENDPOINT_URL: Optional[str] = "http://localhost:9000"
@@ -26,9 +30,19 @@ class Settings(BaseSettings):
     S3_BUCKET_NAME: str = "trackchain-media"
     S3_REGION: str = "us-east-1"
 
-    # Security
+    # Security & Auth
     API_KEY_SECRET: str = "trackchain-super-secret-key"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    JWT_SECRET_KEY: str = "trackchain-jwt-secret-key-change-in-production"
+    REQUEST_SIGNING_SECRET: str = "trackchain-request-signing-secret-change-in-production"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    # Webhooks (RDSO / UDM / TMS Integrations)
+    RDSO_WEBHOOK_URL: Optional[str] = None
+    RDSO_WEBHOOK_SECRET: str = "rdso-webhook-secret-key"
+    UDM_WEBHOOK_URL: Optional[str] = None
+    UDM_WEBHOOK_SECRET: str = "udm-webhook-secret-key"
+    TMS_WEBHOOK_URL: Optional[str] = None
+    TMS_WEBHOOK_SECRET: str = "tms-webhook-secret-key"
 
 
 @lru_cache()

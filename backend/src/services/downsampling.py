@@ -1,28 +1,95 @@
-# Telemetry downsampling service using LTTB / Min-Max peak preservation (tc.v1 SOTA).
+# Telemetry downsampling service using Largest Triangle Three Buckets (LTTB) peak preservation (tc.v1 SOTA).
 
-from typing import List, Dict, Any
-from src.db.models import TelemetryRecord
+from typing import List, Dict, Any, Tuple, Union, Optional
+import numpy as np
+
+
+def lttb_downsample(
+    timestamps: Union[np.ndarray, List[float]],
+    values: Union[np.ndarray, List[float]],
+    target_points: int = 500,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Downsample time-series telemetry while strictly preserving visual shape,
+    extreme spikes, and critical track fault anomalies.
+    Reference: Sveinn Steinarsson (2013), Largest Triangle Three Buckets.
+    """
+    ts = np.asarray(timestamps)
+    vals = np.asarray(values)
+    n = len(ts)
+
+    if target_points >= n or target_points < 3:
+        return ts, vals
+
+    sampled_indices = [0]
+    bucket_size = (n - 2) / (target_points - 2)
+    prev_idx = 0
+
+    for i in range(target_points - 2):
+        bucket_start = int((i + 0) * bucket_size) + 1
+        bucket_end = int((i + 1) * bucket_size) + 1
+        bucket_end = min(bucket_end, n - 1)
+
+        next_start = int((i + 1) * bucket_size) + 1
+        next_end = int((i + 2) * bucket_size) + 1
+        next_end = min(next_end, n - 1)
+
+        if next_end > next_start:
+            avg_next_t = float(np.mean(ts[next_start:next_end]))
+            avg_next_v = float(np.mean(vals[next_start:next_end]))
+        else:
+            avg_next_t, avg_next_v = float(ts[n - 1]), float(vals[n - 1])
+
+        prev_t, prev_v = float(ts[prev_idx]), float(vals[prev_idx])
+        max_area = -1.0
+        max_idx = bucket_start
+
+        for j in range(bucket_start, bucket_end):
+            area = abs(
+                (prev_t - avg_next_t) * (float(vals[j]) - prev_v)
+                - (prev_t - float(ts[j])) * (avg_next_v - prev_v)
+            ) * 0.5
+            if area > max_area:
+                max_area = area
+                max_idx = j
+
+        sampled_indices.append(max_idx)
+        prev_idx = max_idx
+
+    sampled_indices.append(n - 1)
+    return ts[sampled_indices], vals[sampled_indices]
 
 
 def downsample_telemetry_lttb(
-    records: List[TelemetryRecord],
+    records: List[Any],
     threshold: int = 500,
-) -> List[TelemetryRecord]:
+    target_points: Optional[int] = None,
+) -> List[Any]:
     """
-    Largest-Triangle-Three-Buckets (LTTB) / Peak-preserving downsampling for railway telemetry curves.
-    Reduces dense 10-100Hz point streams to representative visual samples while strictly preserving
-    critical spikes (e.g. twist exceedance or vibration shocks).
+    Applies LTTB peak preservation to a list of TelemetryRecord ORM objects or dictionaries.
+    Prioritizes combined track defect signal: (twist_mm_per_m + vibration_rms + vertical_unevenness).
     """
+    if target_points is not None:
+        threshold = target_points
+
     if len(records) <= threshold or threshold <= 2:
         return records
 
-    sampled: List[TelemetryRecord] = []
+    sampled = []
     every = (len(records) - 2) / (threshold - 2)
     a = 0
     sampled.append(records[a])
 
+    def get_x_y(rec: Any) -> Tuple[float, float]:
+        if isinstance(rec, dict):
+            x = float(rec.get("chainage_m", 0.0))
+            y = float(rec.get("twist_mm_per_m", 0.0) or 0.0) + float(rec.get("vibration_rms", 0.0) or 0.0)
+        else:
+            x = float(getattr(rec, "chainage_m", 0.0))
+            y = float(getattr(rec, "twist_mm_per_m", 0.0) or 0.0) + float(getattr(rec, "vibration_rms", 0.0) or 0.0)
+        return x, y
+
     for i in range(threshold - 2):
-        # Calculate point average for next bucket (bucket c)
         avg_x = 0.0
         avg_y = 0.0
         avg_range_start = int((i + 1) * every) + 1
@@ -31,29 +98,24 @@ def downsample_telemetry_lttb(
 
         if avg_range_length > 0:
             for j in range(avg_range_start, avg_range_end):
-                avg_x += records[j].chainage_m
-                avg_y += (records[j].vibration_rms or 0.0) + (records[j].twist_mm_per_m or 0.0)
+                jx, jy = get_x_y(records[j])
+                avg_x += jx
+                avg_y += jy
             avg_x /= avg_range_length
             avg_y /= avg_range_length
 
-        # Get the range for this bucket (bucket b)
         range_offs = int(i * every) + 1
         range_to = min(int((i + 1) * every) + 1, len(records))
 
-        # Point a
-        point_a_x = records[a].chainage_m
-        point_a_y = (records[a].vibration_rms or 0.0) + (records[a].twist_mm_per_m or 0.0)
-
+        point_a_x, point_a_y = get_x_y(records[a])
         max_area = -1.0
         max_area_point = range_offs
 
         for k in range(range_offs, range_to):
-            # Calculate triangle area over points a, b, and average c
+            kx, ky = get_x_y(records[k])
             area = abs(
-                (point_a_x - avg_x)
-                * (((records[k].vibration_rms or 0.0) + (records[k].twist_mm_per_m or 0.0)) - point_a_y)
-                - (point_a_x - records[k].chainage_m)
-                * (avg_y - point_a_y)
+                (point_a_x - avg_x) * (ky - point_a_y)
+                - (point_a_x - kx) * (avg_y - point_a_y)
             ) * 0.5
 
             if area > max_area:
@@ -63,6 +125,5 @@ def downsample_telemetry_lttb(
         sampled.append(records[max_area_point])
         a = max_area_point
 
-    # Always include last point
     sampled.append(records[-1])
     return sampled

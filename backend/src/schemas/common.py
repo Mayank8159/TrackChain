@@ -1,6 +1,7 @@
 # Base schema contracts and common envelopes for TrackChain (tc.v1).
 
-from datetime import datetime
+import secrets
+from datetime import datetime, timezone
 from typing import Generic, TypeVar, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,8 +19,8 @@ class BaseContractModel(BaseModel):
 
 class IdempotentRequest(BaseContractModel):
     schema_version: str = Field(default=SCHEMA_VERSION, description="Schema version identifier")
-    idempotency_key: str = Field(..., description="Unique idempotency key for network retry deduplication")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Request generation timestamp")
+    idempotency_key: Optional[str] = Field(default_factory=lambda: f"idemp_{secrets.token_hex(8)}", description="Unique idempotency key for network retry deduplication")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Request generation timestamp")
 
 
 class PaginationParams(BaseContractModel):
