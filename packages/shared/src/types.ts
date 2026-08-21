@@ -384,3 +384,45 @@ export interface ProcessFrameResult {
   processingMs: number;
   status: string;
 }
+
+// ============================================================================
+// 10. Pipeline Performance & Latency Tracing (tc.v1)
+// ============================================================================
+
+export interface PipelineTrace {
+  trace_id: string;
+  node_id: string;
+  event_type: "TELEMETRY" | "DEFECT" | "MEDIA";
+  captured_at: number;
+  ingested_at: number;
+  inference_ms: number;
+  delivered_at?: number;
+  e2e_ms?: number;
+  transport_ms?: number;
+  delivery_ms?: number;
+}
+
+export interface NodePerformanceSummary {
+  node_id: string;
+  hardware_type?: string;
+  total_events: number;
+  avg_transport_ms: number;
+  avg_inference_ms: number;
+  avg_e2e_ms: number;
+  p95_e2e_ms: number;
+  status: "optimal" | "warning" | "critical";
+}
+
+export interface PerformanceMetrics {
+  window_seconds: number;
+  total_events: number;
+  throughput_eps: number;
+  avg_transport_ms: number;
+  avg_inference_ms: number;
+  avg_delivery_ms: number;
+  avg_e2e_ms: number;
+  p95_e2e_ms: number;
+  composite_score: number;
+  composite_grade: "A" | "B" | "C" | "D" | "F";
+  node_summaries: NodePerformanceSummary[];
+}

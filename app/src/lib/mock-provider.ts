@@ -437,3 +437,129 @@ export function getDeterministicLineGeometries(width = 640, height = 480): LineG
 }
 
 export const MOCK_LINE_GEOMETRIES = getDeterministicLineGeometries(640, 480);
+
+// ============================================================================
+// 8. Deterministic Pipeline Traces & Performance Metrics (tc.v1)
+// ============================================================================
+
+import type { PipelineTrace, PerformanceMetrics } from "./types";
+
+export function generateDeterministicTraces(): PipelineTrace[] {
+  const traces: PipelineTrace[] = [];
+  const baseTime = Date.now() - 120000;
+
+  // Node 1: edge-rpi-01 (WiFi - Low latency 60-80ms E2E)
+  for (let i = 0; i < 25; i++) {
+    const captured = baseTime + i * 4000;
+    const transport = 18 + (i % 6) * 3;
+    const ingested = captured + transport;
+    const inference = 38 + (i % 4) * 2;
+    const delivery = 11 + (i % 3) * 2;
+    const delivered = ingested + inference + delivery;
+    traces.push({
+      trace_id: `trc-rpi-${100 + i}`,
+      node_id: "edge-rpi-01",
+      event_type: i % 5 === 0 ? "DEFECT" : "TELEMETRY",
+      captured_at: captured,
+      ingested_at: ingested,
+      inference_ms: inference,
+      delivered_at: delivered,
+      transport_ms: transport,
+      delivery_ms: delivery,
+      e2e_ms: transport + inference + delivery,
+    });
+  }
+
+  // Node 2: edge-jetson-02 (4G Cellular - Moderate latency 180-240ms E2E)
+  for (let i = 0; i < 18; i++) {
+    const captured = baseTime + 1500 + i * 5500;
+    const transport = 165 + (i % 8) * 8;
+    const ingested = captured + transport;
+    const inference = 20 + (i % 3) * 2;
+    const delivery = 12 + (i % 4);
+    const delivered = ingested + inference + delivery;
+    traces.push({
+      trace_id: `trc-jet-${200 + i}`,
+      node_id: "edge-jetson-02",
+      event_type: i % 4 === 0 ? "DEFECT" : "TELEMETRY",
+      captured_at: captured,
+      ingested_at: ingested,
+      inference_ms: inference,
+      delivered_at: delivered,
+      transport_ms: transport,
+      delivery_ms: delivery,
+      e2e_ms: transport + inference + delivery,
+    });
+  }
+
+  // Node 3: edge-gateway-03 (Degraded Corridor - Latency spikes 500-850ms E2E)
+  for (let i = 0; i < 7; i++) {
+    const captured = baseTime + 3000 + i * 14000;
+    const transport = 520 + (i % 5) * 65;
+    const ingested = captured + transport;
+    const inference = 55 + (i % 4) * 5;
+    const delivery = 18 + (i % 3) * 3;
+    const delivered = ingested + inference + delivery;
+    traces.push({
+      trace_id: `trc-gtw-${300 + i}`,
+      node_id: "edge-gateway-03",
+      event_type: "TELEMETRY",
+      captured_at: captured,
+      ingested_at: ingested,
+      inference_ms: inference,
+      delivered_at: delivered,
+      transport_ms: transport,
+      delivery_ms: delivery,
+      e2e_ms: transport + inference + delivery,
+    });
+  }
+
+  return traces.sort((a, b) => a.captured_at - b.captured_at);
+}
+
+export const MOCK_PIPELINE_TRACES: PipelineTrace[] = generateDeterministicTraces();
+
+export const MOCK_PERFORMANCE_METRICS: PerformanceMetrics = {
+  window_seconds: 300,
+  total_events: 50,
+  throughput_eps: 42.8,
+  avg_transport_ms: 134.2,
+  avg_inference_ms: 32.6,
+  avg_delivery_ms: 12.4,
+  avg_e2e_ms: 179.2,
+  p95_e2e_ms: 486.0,
+  composite_score: 84.5,
+  composite_grade: "B",
+  node_summaries: [
+    {
+      node_id: "edge-rpi-01",
+      hardware_type: "Raspberry Pi 5 (WiFi)",
+      total_events: 25,
+      avg_transport_ms: 25.5,
+      avg_inference_ms: 41.0,
+      avg_e2e_ms: 78.5,
+      p95_e2e_ms: 92.0,
+      status: "optimal",
+    },
+    {
+      node_id: "edge-jetson-02",
+      hardware_type: "Jetson Orin Nano (4G LTE)",
+      total_events: 18,
+      avg_transport_ms: 193.0,
+      avg_inference_ms: 22.0,
+      avg_e2e_ms: 227.0,
+      p95_e2e_ms: 254.0,
+      status: "optimal",
+    },
+    {
+      node_id: "edge-gateway-03",
+      hardware_type: "Industrial Gateway (WAN)",
+      total_events: 7,
+      avg_transport_ms: 650.0,
+      avg_inference_ms: 62.5,
+      avg_e2e_ms: 732.5,
+      p95_e2e_ms: 840.0,
+      status: "warning",
+    },
+  ],
+};
