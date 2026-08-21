@@ -1,4 +1,4 @@
-// Button with variants (primary/secondary/ghost/danger) and loading state.
+// Button with Mission Control variants (primary/secondary/outline/ghost/danger) and loading state (tc.v1).
 
 import React from "react";
 import { cn } from "../../lib/utils";
@@ -24,25 +24,25 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      "inline-flex items-center justify-center font-mono font-medium rounded transition-colors focus:outline-none focus:ring-1 focus:ring-scada-cyan disabled:opacity-50 disabled:pointer-events-none";
+      "inline-flex items-center justify-center font-mono font-medium rounded-control transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scada-accent focus-visible:ring-offset-2 focus-visible:ring-offset-scada-bg disabled:opacity-50 disabled:pointer-events-none select-none";
 
     const variantStyles = {
       primary:
-        "bg-scada-cyan/20 text-scada-cyan border border-scada-cyan/40 hover:bg-scada-cyan/30 active:bg-scada-cyan/40",
+        "bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-sm border border-blue-500/50",
       secondary:
-        "bg-scada-panel text-scada-text border border-scada-border hover:bg-scada-panel-header active:bg-scada-panel",
+        "bg-scada-panel text-scada-text border border-scada-border hover:bg-scada-panel-header hover:border-scada-border-bright active:bg-scada-panel",
       outline:
-        "border border-scada-border text-scada-muted hover:text-scada-text hover:border-scada-border-bright",
+        "border border-scada-border bg-transparent text-scada-text hover:bg-scada-panel hover:text-white hover:border-scada-border-bright",
       ghost:
-        "text-scada-muted hover:text-scada-text hover:bg-scada-panel/60",
+        "bg-transparent text-scada-muted hover:text-scada-text hover:bg-scada-panel/60",
       danger:
-        "bg-scada-red/20 text-scada-red border border-scada-red/40 hover:bg-scada-red/30 active:bg-scada-red/40",
+        "bg-red-600/20 text-red-400 border border-red-500/40 hover:bg-red-600/30 active:bg-red-600/40",
     }[variant];
 
     const sizeStyles = {
-      sm: "px-2.5 py-1 text-[11px]",
-      md: "px-3.5 py-1.5 text-xs",
-      lg: "px-4 py-2 text-sm",
+      sm: "px-2.5 py-1 text-[11px] gap-1.5",
+      md: "px-3.5 py-1.5 text-xs gap-2",
+      lg: "px-4 py-2 text-sm gap-2.5",
     }[size];
 
     return (
@@ -53,7 +53,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {isLoading && (
-          <span className="mr-2 h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent shrink-0" />
         )}
         {children}
       </button>

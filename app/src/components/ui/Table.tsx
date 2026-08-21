@@ -1,4 +1,4 @@
-// Base table primitives (head/body/row/cell) used by feature tables.
+// Base table primitives for high-density railway telemetry & defect logs (tc.v1).
 
 import React from "react";
 import { cn } from "../../lib/utils";
@@ -8,7 +8,7 @@ export function Table({
   ...props
 }: React.HTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="relative w-full overflow-auto rounded border border-scada-border bg-scada-panel">
+    <div className="relative w-full overflow-auto rounded-card border border-scada-border bg-scada-panel">
       <table
         className={cn("w-full caption-bottom text-left text-xs font-mono", className)}
         {...props}
@@ -24,7 +24,7 @@ export function TableHeader({
   return (
     <thead
       className={cn(
-        "border-b border-scada-border bg-scada-panel-header text-[10px] font-bold uppercase tracking-wider text-scada-muted",
+        "border-b border-scada-border bg-scada-panel-header text-[10px] font-bold uppercase tracking-wider text-scada-muted select-none",
         className
       )}
       {...props}
@@ -51,7 +51,7 @@ export function TableRow({
   return (
     <tr
       className={cn(
-        "transition-colors hover:bg-scada-panel-header/60",
+        "transition-colors hover:bg-slate-800/60 focus-visible:bg-slate-800/80",
         className
       )}
       {...props}
@@ -77,7 +77,7 @@ export function TableCell({
 }: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return (
     <td
-      className={cn("p-3 align-middle text-scada-text", className)}
+      className={cn("p-3 align-middle text-scada-text font-mono text-xs", className)}
       {...props}
     />
   );

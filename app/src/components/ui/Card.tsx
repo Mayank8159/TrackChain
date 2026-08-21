@@ -1,8 +1,9 @@
-// Reusable card container for dashboard panels.
+// Reusable Mission Control card container for dashboard panels (tc.v1).
 
 import React from "react";
+import { cn } from "../../lib/utils";
 
-interface CardProps {
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   title?: string;
   badge?: React.ReactNode;
   actions?: React.ReactNode;
@@ -16,10 +17,15 @@ export function Card({
   actions,
   children,
   className = "",
+  ...props
 }: CardProps) {
   return (
     <div
-      className={`scada-card overflow-hidden border border-scada-border transition-all duration-200 hover:border-scada-border-bright ${className}`}
+      className={cn(
+        "scada-card overflow-hidden border border-scada-border bg-scada-panel rounded-card transition-colors hover:border-scada-border-bright",
+        className
+      )}
+      {...props}
     >
       {title && (
         <div className="scada-card-header flex items-center justify-between border-b border-scada-border bg-scada-panel-header px-4 py-2.5">
