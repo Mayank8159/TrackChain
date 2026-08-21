@@ -1,9 +1,11 @@
-# Fusion thresholds and persistence window.
+# Persistence Rule Fusion Configuration (tc.v1 SOTA)
 
-persistence_window: 3
-known_fault_confidence_threshold: 0.70
-novel_anomaly_confidence_threshold: 0.65
+persistence_window: 3       # Requires 3 consecutive segments (6m) to confirm novel anomalies
+known_threshold: 0.60        # Calibrated probability threshold for discrete known defects
+novel_threshold: 0.50        # Calibrated probability threshold for novel visual/geometry anomalies
 
-weights:
-  vision_stream: 0.50
-  geometry_stream: 0.50
+severity_mapping:
+  critical: 0.80
+  high: 0.65
+  medium: 0.50
+  low: 0.0

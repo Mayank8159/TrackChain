@@ -1,11 +1,20 @@
-# Sequence VAE architecture and training settings.
+model:
+  name: "sequence_vae"
+  seq_len: 80
+  n_features: 5
+  latent_dim: 16
 
-input_dim: 6
-hidden_dim: 32
-latent_dim: 8
-sequence_length: 100
-kl_weight: 0.01
-learning_rate: 0.001
-epochs: 25
-batch_size: 32
-reconstruction_loss: "mse"
+training:
+  epochs: 25
+  beta: 0.01
+  batch_size: 64
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer: "AdamW"
+  scheduler: "CosineAnnealing"
+
+calibration:
+  method: "sigmoid"
+  percentile: 99.0
+  steepness_k: 2.5
+  operating_threshold: 0.50

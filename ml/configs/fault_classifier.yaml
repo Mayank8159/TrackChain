@@ -1,17 +1,30 @@
-# Bi-LSTM window size, features, and hyperparameters.
+model:
+  name: "bilstm_attention"
+  input_size: 5
+  hidden_size: 64
+  num_layers: 2
+  dropout: 0.3
+  num_classes: 5
 
-window_length_m: 25.0
-sequence_length: 100
-input_dim: 6
-hidden_dim: 64
-num_layers: 2
-dropout: 0.2
-learning_rate: 0.001
-epochs: 30
-batch_size: 32
+training:
+  epochs: 20
+  batch_size: 64
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer: "AdamW"
+  scheduler: "CosineAnnealing"
+  loss: "LabelSmoothingCrossEntropy"
+  label_smoothing: 0.1
+
+data:
+  seq_len: 80       # 20 meters at 0.25m bins
+  bin_size: 0.25
+  features: ["twist_3m", "versine_10m", "versine_20m", "unevenness_10m", "cant"]
 
 classes:
-  0: nominal
-  1: gauge_widening
-  2: twist_exceedance
-  3: corrugation
+  0: "normal"
+  1: "dipped_joint"
+  2: "cyclic_top"
+  3: "twist_fault"
+  4: "alignment_kink"
+  5: "buckling_risk"

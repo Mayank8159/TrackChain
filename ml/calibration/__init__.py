@@ -3,9 +3,11 @@
 from ml.calibration.temperature import TemperatureScaler
 from ml.calibration.fpr_threshold import FPRThresholdCalibrator
 from ml.calibration.patchcore_scale import SigmoidDistanceCalibrator
+from ml.calibration.unified_calibrator import UnifiedCalibrator
 
 __all__ = [
     "TemperatureScaler",
     "FPRThresholdCalibrator",
     "SigmoidDistanceCalibrator",
+    "UnifiedCalibrator",
 ]

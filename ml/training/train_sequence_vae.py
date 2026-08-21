@@ -1,47 +1,26 @@
-# Train the sequence VAE on normal geometry windows.
+"""
+ml/training/train_sequence_vae.py
+Train the 1D-CNN Sequence VAE on normal track geometry sequences (tc.v1 SOTA).
+"""
 
-import torch
-import torch.optim as optim
-import numpy as np
-from ml.models.geometry.sequence_vae import SequenceVAE
-from ml.data.synthetic import generate_synthetic_geometry
-from ml.utils.logging import get_ml_logger
+from ml.scripts.train_sequence_vae import train_sequence_vae
 
-logger = get_ml_logger("train_sequence_vae")
-
-
-def train_vae(epochs: int = 10):
-    logger.info("Training Sequence VAE on normal-only geometry windows...")
-    raw = generate_synthetic_geometry(length_m=4000.0, fault_probability=0.0)
-
-    seq_len = 100
-    n_windows = len(raw["chainage_m"]) // seq_len
-    features = np.stack([
-        raw["gauge_mm"],
-        raw["cant_mm"],
-        raw["twist_mm_per_m"],
-        raw["vertical_unevenness_mm"],
-        raw["alignment_mm"],
-        raw["vibration_rms_g"],
-    ], axis=1)
-
-    X = torch.from_numpy(features[:n_windows * seq_len].reshape(n_windows, seq_len, 6)).float()
-    vae = SequenceVAE(input_dim=6, hidden_dim=32, latent_dim=8)
-    optimizer = optim.Adam(vae.parameters(), lr=1e-3)
-
-    for epoch in range(epochs):
-        optimizer.zero_grad()
-        recon_x, mu, logvar = vae(X)
-        recon_loss = torch.mean((recon_x - X) ** 2)
-        kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-        loss = recon_loss + 0.01 * kl_loss
-        loss.backward()
-        optimizer.step()
-        logger.info(f"Epoch {epoch+1}/{epochs} | VAE Loss: {loss.item():.4f}")
-
-    torch.save(vae.state_dict(), "artifacts/checkpoints/sequence_vae.pt")
-    logger.info("Sequence VAE saved to artifacts/checkpoints/sequence_vae.pt")
-
+__all__ = ["train_sequence_vae"]
 
 if __name__ == "__main__":
-    train_vae()
+    import argparse
+    parser = argparse.ArgumentParser(description="Train 1D-CNN Sequence VAE for Novel Geometry.")
+    parser.add_argument("--epochs", type=int, default=25, help="Number of training epochs")
+    parser.add_argument("--beta", type=float, default=0.01, help="Beta-VAE KL weight")
+    parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
+    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
+    parser.add_argument("--save-path", default="artifacts/checkpoints/geometry/sequence_vae.pt")
+    args = parser.parse_args()
+
+    train_sequence_vae(
+        epochs=args.epochs,
+        beta=args.beta,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        save_path=args.save_path,
+    )

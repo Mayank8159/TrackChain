@@ -1,11 +1,15 @@
-# Generates synthetic TRC telemetry based on EN 13848-2 PSD profiles (tc.v1 SOTA).
+# Generates synthetic TRC telemetry, 5-class geometry sequences, and normal sequence datasets based on EN 13848-2 PSD (tc.v1 SOTA).
 
 import os
+import sys
+import argparse
 from pathlib import Path
 from typing import Tuple, Optional
 import numpy as np
 import pandas as pd
 from scipy.ndimage import gaussian_filter1d
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 
 def generate_track_profile_psd(
@@ -32,11 +36,11 @@ def generate_track_profile_psd(
     # Inverse FFT with random phase
     phases = np.exp(1j * np.random.uniform(0, 2 * np.pi, len(freqs)))
     noise = np.fft.irfft(np.sqrt(psd) * phases, n=n_pts)
-    
+
     # Smooth baseline cant using physical rail curvature smoothing (sigma ~ 1.0m)
     sigma_samples = int(1.0 / spatial_resolution_m)
     smooth_noise = gaussian_filter1d(noise, sigma=sigma_samples)
-    
+
     # Scale to typical cant roughness standard deviation (~1.0mm RMS for high-quality track)
     cant_profile_mm = (smooth_noise / (np.std(smooth_noise) + 1e-8)) * 0.8
 
@@ -58,10 +62,10 @@ def generate_trc_telemetry_csv(
     defect_mm: float = 5.0,
     defect_start_m: float = 500.0,
 ) -> str:
-    """
-    Generate time-domain 100Hz IMU and Laser TRC telemetry CSV for chainage resampling.
-    """
+    """Generate time-domain 100Hz IMU and Laser TRC telemetry CSV for chainage resampling."""
     p = Path(output_path)
+    if p.suffix == "":
+        p = p / "synthetic_trc_run_001.csv"
     p.parent.mkdir(parents=True, exist_ok=True)
 
     dt = 1.0 / sample_rate_hz
@@ -69,7 +73,6 @@ def generate_trc_telemetry_csv(
     timestamps = np.arange(0, total_time_s, dt)
     n_samples = len(timestamps)
 
-    # Generate spatial track profile and interpolate onto train trajectory
     _, cant_profile_mm = generate_track_profile_psd(
         length_m=length_m,
         spatial_resolution_m=0.05,
@@ -81,14 +84,12 @@ def generate_trc_telemetry_csv(
     train_x = timestamps * speed_mps
     cant_sampled_mm = np.interp(train_x, track_x, cant_profile_mm)
 
-    # Convert cant in mm to IMU roll in radians: Roll = arcsin(Cant / Gauge)
     nominal_gauge_mm = 1676.0
     roll_rad = np.arcsin(np.clip(cant_sampled_mm / nominal_gauge_mm, -0.2, 0.2))
 
-    # Add realistic sensor noise to IMU channels
     np.random.seed(42)
     lat_accel_g = np.random.normal(0.0, 0.01, n_samples)
-    vert_accel_g = np.random.normal(1.0, 0.02, n_samples)  # 1G gravity baseline
+    vert_accel_g = np.random.normal(1.0, 0.02, n_samples)
     gauge_mm = np.random.normal(nominal_gauge_mm, 0.4, n_samples)
 
     if defect_mm > 0:
@@ -105,26 +106,130 @@ def generate_trc_telemetry_csv(
     })
 
     df.to_csv(p, index=False)
-    print(f"[OK] Generated EN 13848-2 compliant synthetic TRC telemetry:")
-    print(f"     Path:           {p}")
-    print(f"     Track Length:   {length_m} m ({n_samples} samples @ 100 Hz)")
-    print(f"     Speed:          {speed_mps} m/s ({speed_mps * 3.6:.0f} km/h)")
-    print(f"     Injected Fault: {defect_mm}mm Twist @ chainage {defect_start_m}m")
+    print(f"[OK] Generated synthetic TRC telemetry CSV: {p}")
     return str(p)
 
 
+def generate_normal_sequences_csv(
+    output_path: str = "data/processed/normal_sequences.csv",
+    num_sequences: int = 1000,
+    seq_len: int = 80,
+    step_m: float = 0.25,
+) -> str:
+    """Generate clean normal EN 13848 track geometry sequences for Sequence VAE training."""
+    from ml.data.synthetic_geometry import SyntheticGeometryDataset, GeometryFaultType
+
+    p = Path(output_path)
+    if p.suffix == "":
+        p = p / "normal_sequences.csv"
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    ds = SyntheticGeometryDataset(
+        num_samples=num_sequences * 2,
+        seq_len=seq_len,
+        bin_size=step_m,
+        num_classes=5,
+        random_seed=42,
+    )
+    normal_mask = (ds.labels == GeometryFaultType.NORMAL)
+    normal_data = ds.data[normal_mask][:num_sequences].numpy()  # [N, 80, 5]
+
+    rows = []
+    for seq_id, seq_arr in enumerate(normal_data):
+        for bin_idx, row in enumerate(seq_arr):
+            rows.append({
+                "sequence_id": seq_id,
+                "bin_idx": bin_idx,
+                "chainage_offset_m": bin_idx * step_m,
+                "twist_3m_mm": row[0],
+                "versine_10m_mm": row[1],
+                "versine_20m_mm": row[2],
+                "unevenness_10m_mm": row[3],
+                "cant_mm": row[4],
+            })
+
+    df = pd.DataFrame(rows)
+    df.to_csv(p, index=False)
+    print(f"[OK] Generated {num_sequences} normal geometry sequences to: {p}")
+    return str(p)
+
+
+def generate_geometry_sequences_dataset(
+    output_path: str = "data/processed/geometry_sequences/",
+    num_sequences: int = 5000,
+    seq_len: int = 80,
+    step_m: float = 0.25,
+) -> str:
+    """Generate multi-class synthetic geometry sequences for Bi-LSTM classifier training."""
+    from ml.data.synthetic_geometry import SyntheticGeometryDataset
+
+    p = Path(output_path)
+    if p.suffix == "":
+        p.mkdir(parents=True, exist_ok=True)
+        csv_path = p / "geometry_sequences.csv"
+        npz_path = p / "geometry_sequences.npz"
+    else:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        csv_path = p
+        npz_path = p.with_suffix(".npz")
+
+    ds = SyntheticGeometryDataset(
+        num_samples=num_sequences,
+        seq_len=seq_len,
+        bin_size=step_m,
+        num_classes=6,
+        random_seed=42,
+    )
+
+    data_arr = ds.data.numpy()      # [N, 80, 5]
+    labels_arr = ds.labels.numpy()  # [N]
+
+    # Save as compact NPZ
+    np.savez_compressed(npz_path, data=data_arr, labels=labels_arr)
+
+    # Also save structured CSV preview/records
+    rows = []
+    for seq_id, (seq_arr, label_val) in enumerate(zip(data_arr, labels_arr)):
+        for bin_idx, row in enumerate(seq_arr):
+            rows.append({
+                "sequence_id": seq_id,
+                "label": int(label_val),
+                "bin_idx": bin_idx,
+                "chainage_offset_m": bin_idx * step_m,
+                "twist_3m_mm": row[0],
+                "versine_10m_mm": row[1],
+                "versine_20m_mm": row[2],
+                "unevenness_10m_mm": row[3],
+                "cant_mm": row[4],
+            })
+
+    df = pd.DataFrame(rows)
+    df.to_csv(csv_path, index=False)
+    print(f"[OK] Generated {num_sequences} geometry sequences (5 classes + normal) to: {csv_path} and {npz_path}")
+    return str(csv_path)
+
+
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Generate synthetic EN 13848 TRC telemetry.")
-    parser.add_argument("--out", default="data/processed/synthetic_trc_run_001.csv", help="Output CSV path")
+    parser = argparse.ArgumentParser(description="Generate synthetic EN 13848 TRC telemetry / datasets.")
+    parser.add_argument("--mode", choices=["telemetry", "normal_sequences", "geometry_sequences"], default="telemetry")
+    parser.add_argument("--out", "--output", default=None, dest="output", help="Output path")
     parser.add_argument("--length", type=float, default=1000.0, help="Track length in meters")
     parser.add_argument("--defect", type=float, default=5.0, help="Injected twist defect in mm")
     parser.add_argument("--defect-pos", type=float, default=500.0, help="Defect start chainage in meters")
+    parser.add_argument("--num_samples", "--num-samples", "--num-sequences", "--num_sequences", type=int, default=1000, dest="num_samples", help="Number of sequences")
     args = parser.parse_args()
 
-    generate_trc_telemetry_csv(
-        output_path=args.out,
-        length_m=args.length,
-        defect_mm=args.defect,
-        defect_start_m=args.defect_pos,
-    )
+    if args.mode == "normal_sequences":
+        out_path = args.output or "data/processed/normal_sequences.csv"
+        generate_normal_sequences_csv(output_path=out_path, num_sequences=args.num_samples)
+    elif args.mode == "geometry_sequences":
+        out_path = args.output or "data/processed/geometry_sequences/"
+        generate_geometry_sequences_dataset(output_path=out_path, num_sequences=args.num_samples)
+    else:
+        out_path = args.output or "data/processed/synthetic_trc_run_001.csv"
+        generate_trc_telemetry_csv(
+            output_path=out_path,
+            length_m=args.length,
+            defect_mm=args.defect,
+            defect_start_m=args.defect_pos,
+        )

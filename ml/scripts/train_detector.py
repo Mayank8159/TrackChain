@@ -5,6 +5,7 @@ import os
 import shutil
 import yaml
 from pathlib import Path
+from typing import Optional, Dict, Any
 
 try:
     from ultralytics import YOLO

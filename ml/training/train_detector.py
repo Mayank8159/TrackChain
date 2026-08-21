@@ -1,24 +1,28 @@
-# Fine-tune the YOLO detector on real/synthetic defect imagery.
+"""
+ml/training/train_detector.py
+Fine-tune the YOLOv8 defect detector on railway defect imagery (tc.v1 SOTA).
+"""
 
-import os
-import argparse
-from ml.utils.logging import get_ml_logger
+from ml.scripts.train_detector import train_yolo_detector
 
-logger = get_ml_logger("train_detector")
-
-
-def train_yolo_detector(data_yaml: str, epochs: int = 50, batch_size: int = 16):
-    """Orchestrate YOLOv8 transfer learning on annotated rail surface defects."""
-    logger.info(f"Starting YOLO detector training with config: {data_yaml}")
-    # from ultralytics import YOLO
-    # model = YOLO("yolov8n.pt")
-    # model.train(data=data_yaml, epochs=epochs, batch=batch_size, project="artifacts/checkpoints", name="yolo_detector")
-    logger.info("YOLO detector training script completed.")
-
+__all__ = ["train_yolo_detector"]
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data", default="ml/configs/detector.yaml")
-    parser.add_argument("--epochs", type=int, default=10)
+    import argparse
+    parser = argparse.ArgumentParser(description="Train YOLOv8 defect detector.")
+    parser.add_argument("--data", default="data/external/rail_defects/data.yaml", help="Path to data.yaml")
+    parser.add_argument("--config", default="ml/configs/detector.yaml", help="Path to detector.yaml")
+    parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
+    parser.add_argument("--batch", type=int, default=16, help="Batch size")
+    parser.add_argument("--device", default="cpu", help="Device ('cpu' or 'cuda')")
+    parser.add_argument("--output-dir", default=None, help="Output directory for checkpoints")
     args = parser.parse_args()
-    train_yolo_detector(args.data, args.epochs)
+
+    train_yolo_detector(
+        data_yaml=args.data,
+        config_path=args.config,
+        epochs=args.epochs,
+        batch_size=args.batch,
+        device=args.device,
+        output_dir=args.output_dir,
+    )
