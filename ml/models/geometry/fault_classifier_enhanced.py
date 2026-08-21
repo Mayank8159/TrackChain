@@ -9,7 +9,7 @@ Enhanced Bi-LSTM Geometry Fault Classifier with:
 """
 import json
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union, List, Any
 
 import numpy as np
 import torch
