@@ -20,7 +20,15 @@ const nextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: `${backendUrl}/:path*`,
+        destination: `${backendUrl}/api/:path*`,
+      },
+      {
+        source: "/process-frame",
+        destination: `${backendUrl}/process-frame`,
+      },
+      {
+        source: "/health",
+        destination: `${backendUrl}/health`,
       },
     ];
   },

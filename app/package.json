@@ -16,13 +16,19 @@
     "@trackchain/shared": "file:../packages/shared",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "hls.js": "^1.5.17",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.469.0",
     "next": "14.2.21",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.6.0"
+    "react-leaflet": "^4.2.1",
+    "recharts": "^2.15.4",
+    "tailwind-merge": "^2.6.0",
+    "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@types/leaflet": "^1.9.22",
     "@types/node": "^22.10.5",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
