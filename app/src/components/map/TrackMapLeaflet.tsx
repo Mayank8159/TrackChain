@@ -176,12 +176,14 @@ export function TrackMapLeaflet({
   ];
 
   return (
-    <div className={`relative w-full h-[520px] rounded-lg overflow-hidden bg-slate-950 ${className || ""}`}>
+    <div className={`relative w-full h-[520px] rounded-lg overflow-hidden bg-[#050c1a] ${className || ""}`}>
+      {/* Holographic vignette — blends map edges into the glass card */}
+      <div className="leaflet-map-vignette" aria-hidden="true" />
       <MapContainer
         bounds={corridorBounds}
         zoom={9}
         scrollWheelZoom={false}
-        style={{ width: "100%", height: "100%", background: "#0B1120" }}
+        style={{ width: "100%", height: "100%", background: "#050c1a" }}
         attributionControl={false}
       >
         <MapViewController bounds={corridorBounds} />

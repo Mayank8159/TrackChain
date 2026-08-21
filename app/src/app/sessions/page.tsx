@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/Table";
 import { SessionStatusBadge } from "@/components/sessions/SessionStatusBadge";
+import { DataError } from "@/components/ui/DataError";
+import { useModeStore } from "@/stores/mode-store";
 import { useSessions } from "@/hooks/useSessions";
 import { useExport } from "@/hooks/useExport";
 import { useToast } from "@/components/ui/Toast";
@@ -19,15 +21,15 @@ import { formatTimestamp, formatSessionDuration } from "@/lib/format";
 import type { MonitoringSession } from "@/lib/types";
 
 export default function SessionsPage() {
-  const { data: initialSessions = [] } = useSessions();
-  const [sessionsList, setSessionsList] = useState<MonitoringSession[]>(initialSessions);
+  const { mode } = useModeStore();
+  const { data: initialSessions = [], isError, refetch } = useSessions();
+  const [sessionsList, setSessionsList] = useState<MonitoringSession[]>([]);
   const { exportSessionsCSV } = useExport();
   const { showToast } = useToast();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  // Keep local list in sync with query cache if not mutated
   const sessions = sessionsList.length > 0 ? sessionsList : initialSessions;
 
   const filteredSessions = sessions.filter((s) => {
@@ -193,9 +195,17 @@ export default function SessionsPage() {
             </div>
           </div>
 
-          {/* Sessions Table with Responsive Scroll */}
-          <div className="relative w-full overflow-x-auto touch-pan-x overscroll-contain">
-            <div className="min-w-[850px]">
+          {/* REAL Mode Error State */}
+          {mode === "REAL" && isError ? (
+            <DataError
+              title="Sessions Registry Offline"
+              message="Failed to fetch active inspection missions from the backend. The server may be unreachable."
+              onRetry={() => refetch()}
+            />
+          ) : (
+            /* Sessions Table with Responsive Scroll */
+            <div className="relative w-full overflow-x-auto touch-pan-x overscroll-contain">
+              <div className="min-w-[850px]">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -278,6 +288,7 @@ export default function SessionsPage() {
               </Table>
             </div>
           </div>
+          )}
         </div>
       </Card>
     </div>

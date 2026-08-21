@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+  <rect width="640" height="480" fill="#0f172a"/>
+  
+  <!-- Sleepers (Horizontal Ties) -->
+  <g fill="#334155" stroke="#475569" stroke-width="2">
+    <rect x="120" y="40" width="400" height="30" rx="3"/>
+    <rect x="120" y="110" width="400" height="30" rx="3"/>
+    <rect x="120" y="180" width="400" height="30" rx="3"/>
+    <rect x="120" y="250" width="400" height="30" rx="3"/>
+    <rect x="120" y="320" width="400" height="30" rx="3"/>
+    <rect x="120" y="390" width="400" height="30" rx="3"/>
+  </g>
+
+  <!-- Left Steel Running Rail -->
+  <rect x="180" y="0" width="28" height="480" fill="#94a3b8" stroke="#cbd5e1" stroke-width="2"/>
+  <rect x="190" y="0" width="8" height="480" fill="#f8fafc"/>
+
+  <!-- Right Steel Running Rail -->
+  <rect x="432" y="0" width="28" height="480" fill="#94a3b8" stroke="#cbd5e1" stroke-width="2"/>
+  <rect x="442" y="0" width="8" height="480" fill="#f8fafc"/>
+
+  <!-- Fastener Anomaly: Missing clip on left rail at Y=180 -->
+  <g fill="#64748b">
+    <circle cx="168" cy="55" r="5"/>
+    <circle cx="218" cy="55" r="5"/>
+    <circle cx="420" cy="55" r="5"/>
+    <circle cx="470" cy="55" r="5"/>
+    
+    <circle cx="168" cy="125" r="5"/>
+    <circle cx="218" cy="125" r="5"/>
+    <circle cx="420" cy="125" r="5"/>
+    <circle cx="470" cy="125" r="5"/>
+
+    <!-- Dislodged gap at 168, 195 -->
+    <circle cx="168" cy="195" r="5" fill="#ef4444" stroke="#f87171" stroke-width="2"/>
+    <circle cx="420" cy="195" r="5"/>
+    <circle cx="470" cy="195" r="5"/>
+
+    <circle cx="168" cy="265" r="5"/>
+    <circle cx="218" cy="265" r="5"/>
+    <circle cx="420" cy="265" r="5"/>
+    <circle cx="470" cy="265" r="5"/>
+  </g>
+</svg>

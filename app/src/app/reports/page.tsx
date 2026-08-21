@@ -20,12 +20,15 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
+import { DataError } from "@/components/ui/DataError";
+import { useModeStore } from "@/stores/mode-store";
 import { useSessions } from "@/hooks/useSessions";
 import { useExport } from "@/hooks/useExport";
 import { useToast } from "@/components/ui/Toast";
 
 export default function ReportsPage() {
-  const { data: sessions = [] } = useSessions();
+  const { mode } = useModeStore();
+  const { data: sessions = [], isError, refetch } = useSessions();
   const { isExporting, exportError, downloadSessionReport } = useExport();
   const { showToast } = useToast();
 
@@ -75,6 +78,15 @@ export default function ReportsPage() {
           </div>
         }
       />
+
+      {/* REAL Mode Backend Offline Error */}
+      {mode === "REAL" && isError && (
+        <DataError
+          title="Engineering Export Service Offline"
+          message="Failed to fetch inspection records and schema metrics from the backend. Switch to DEMO mode to test report exports with deterministic data."
+          onRetry={() => refetch()}
+        />
+      )}
 
       {/* 2. Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

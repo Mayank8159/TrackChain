@@ -47,7 +47,7 @@ export function Modal({
       {/* Modal Container */}
       <div
         className={cn(
-          "relative z-10 w-full max-w-2xl rounded-lg border border-scada-border bg-scada-panel p-6 shadow-2xl transition-all",
+          "relative z-10 w-full max-w-2xl rounded-lg glass-heavy p-6 shadow-2xl transition-all",
           className
         )}
       >

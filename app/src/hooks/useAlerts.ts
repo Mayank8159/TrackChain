@@ -1,15 +1,20 @@
-// Fetch and subscribe to real-time Server-Sent Events (SSE) alerts with audio cues and triage actions (tc.v1).
+// Fetch and subscribe to real-time alerts gated by DEMO (Scripted Simulator) vs REAL (SSE Stream) (tc.v1).
 
 import { useState, useEffect, useCallback } from "react";
 import type { AlertEvent } from "../lib/types";
 import { sseClient } from "../lib/sse";
 import { MOCK_ALERTS } from "../lib/mock-provider";
 import { audioManager } from "../lib/audio";
+import { useModeStore } from "../stores/mode-store";
+import { createDemoSSESimulator } from "../lib/sse-simulator";
 
 export function useAlerts() {
+  const { mode, setConnectionState } = useModeStore();
   const [alerts, setAlerts] = useState<AlertEvent[]>(MOCK_ALERTS);
   const [snoozedClasses, setSnoozedClasses] = useState<string[]>([]);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(audioManager.isEnabled());
+
+  const isDemo = mode === "DEMO";
 
   const toggleSound = useCallback(() => {
     const next = !audioManager.isEnabled();
@@ -20,11 +25,11 @@ export function useAlerts() {
     }
   }, []);
 
-  useEffect(() => {
-    // Subscribe to live SSE alerts from backend /api/alerts/stream
-    const unsubscribe = sseClient.subscribeAlerts((incomingAlert: any) => {
+  const handleIncomingAlert = useCallback(
+    (incomingAlert: any) => {
       if (!incomingAlert) return;
-      const defectClass = incomingAlert.defect_class || incomingAlert.defectClass || "visual_anomaly";
+      const defectClass =
+        incomingAlert.defect_class || incomingAlert.defectClass || "visual_anomaly";
 
       // Ignore if class is currently snoozed
       if (snoozedClasses.includes(defectClass)) return;
@@ -53,12 +58,50 @@ export function useAlerts() {
       }
 
       setAlerts((prev) => [newAlert, ...prev.filter((a) => a.id !== newAlert.id)]);
+    },
+    [snoozedClasses]
+  );
+
+  // Alert ingestion stream lifecycle
+  useEffect(() => {
+    if (isDemo) {
+      // 1. DEMO Mode: Run scripted deterministic simulator
+      setConnectionState("ACTIVE");
+      const sim = createDemoSSESimulator((demoAlert) => {
+        handleIncomingAlert(demoAlert);
+      });
+
+      // Also listen to any manual trigger demo alert events broadcast via sseClient
+      const unsubscribe = sseClient.subscribeAlerts((manualAlert: any) => {
+        handleIncomingAlert(manualAlert);
+      });
+
+      return () => {
+        sim.stop();
+        unsubscribe();
+      };
+    }
+
+    // 2. REAL Mode: Subscribe to live FastAPI SSE Stream
+    const unsubscribeStatus = sseClient.subscribeStatus((status) => {
+      if (status === "connected") {
+        setConnectionState("ACTIVE");
+      } else if (status === "connecting") {
+        setConnectionState("DEGRADED");
+      } else {
+        setConnectionState("ERROR");
+      }
+    });
+
+    const unsubscribeAlerts = sseClient.subscribeAlerts((liveAlert) => {
+      handleIncomingAlert(liveAlert);
     });
 
     return () => {
-      unsubscribe();
+      unsubscribeStatus();
+      unsubscribeAlerts();
     };
-  }, [snoozedClasses]);
+  }, [isDemo, handleIncomingAlert, setConnectionState]);
 
   const acknowledgeAlert = useCallback((id: string, operator = "Chief Track Inspector") => {
     audioManager.playAckChime();
@@ -102,5 +145,6 @@ export function useAlerts() {
     snoozedClasses,
     soundEnabled,
     toggleSound,
+    isDemo,
   };
 }

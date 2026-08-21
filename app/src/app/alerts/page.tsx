@@ -17,11 +17,14 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { AlertCard } from "@/components/alerts/AlertCard";
+import { DataError } from "@/components/ui/DataError";
+import { useModeStore } from "@/stores/mode-store";
 import { useAlerts } from "@/hooks/useAlerts";
 import { useToast } from "@/components/ui/Toast";
 import type { AlertEvent } from "@/lib/types";
 
 export default function AlertsPage() {
+  const { mode, connectionState, setMode } = useModeStore();
   const {
     alerts,
     acknowledgeAlert,
@@ -114,6 +117,15 @@ export default function AlertsPage() {
           </div>
         }
       />
+
+      {/* REAL Mode Stream Disconnected Error */}
+      {mode === "REAL" && connectionState === "ERROR" && (
+        <DataError
+          title="Real-Time Alert Ingestion Offline"
+          message="Failed to establish Server-Sent Events (SSE) connection with FastAPI /api/alerts/stream. Live dispatch board is suspended."
+          onRetry={() => setMode("REAL")}
+        />
+      )}
 
       {/* 2. Top Severity Filter Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-control border border-scada-border font-mono text-xs">

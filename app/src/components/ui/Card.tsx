@@ -1,4 +1,4 @@
-// Reusable Mission Control card container for dashboard panels (tc.v1).
+// Reusable Holographic SCADA card container — glassmorphic surface (tc.holo.v1).
 
 import React from "react";
 import { cn } from "../../lib/utils";
@@ -22,15 +22,16 @@ export function Card({
   return (
     <div
       className={cn(
-        "scada-card overflow-hidden border border-scada-border bg-scada-panel rounded-card transition-colors hover:border-scada-border-bright",
+        // Glass surface: 60% opacity slate-900, heavy backdrop blur, top-edge highlight
+        "glass-card overflow-hidden rounded-card transition-all",
         className
       )}
       {...props}
     >
       {title && (
-        <div className="scada-card-header flex items-center justify-between border-b border-scada-border bg-scada-panel-header px-4 py-2.5">
+        <div className="scada-card-header flex items-center justify-between px-4 py-2.5">
           <div className="flex items-center gap-2.5">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-scada-text font-mono">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-300 font-mono">
               {title}
             </h3>
             {badge}

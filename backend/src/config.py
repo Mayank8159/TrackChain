@@ -36,6 +36,18 @@ class Settings(BaseSettings):
     REQUEST_SIGNING_SECRET: str = "trackchain-request-signing-secret-change-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    # CORS Allowlist
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://trackchain.vercel.app",
+        "https://trackchain-app.vercel.app",
+    ]
+
+    # Rate Limiting (per-device token bucket)
+    RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60
+    RATE_LIMIT_BURST: int = 10
+
     # Webhooks (RDSO / UDM / TMS Integrations)
     RDSO_WEBHOOK_URL: Optional[str] = None
     RDSO_WEBHOOK_SECRET: str = "rdso-webhook-secret-key"

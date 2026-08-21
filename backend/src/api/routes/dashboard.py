@@ -130,3 +130,12 @@ def export_session_report(
         )
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported export format: {format}")
+
+
+@router.get("/performance", tags=["Performance Observatory"])
+def get_pipeline_performance(
+    window: int = Query(default=300, description="Observability window in seconds (e.g. 300 for 5m)"),
+):
+    """Retrieve 5-stage latency metrics, throughput EPS, and Composite Reliability Grade."""
+    from src.services.trace_buffer import trace_buffer
+    return trace_buffer.calculate_metrics(window_seconds=window)
