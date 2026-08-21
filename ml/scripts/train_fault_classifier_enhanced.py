@@ -429,7 +429,7 @@ def train_enhanced_bilstm(args):
     print(f"\nFinal Metrics:")
     print(f"  Best Validation Accuracy: {best_val_acc:.2f}%")
     print(f"  Optimal Temperature: {optimal_temperature:.3f}")
-    print(f"  ECE: {ece:.4f}")
+    print(f"  Vector Scaling ECE: {ece_vector:.4f}")
     print(f"  Training Time: {training_time/60:.2f} minutes")
 
     return model, calibration

@@ -190,12 +190,14 @@ else
         "$EXPORT_DIR/.yolo_onnx.done" \
         python ml/inference/exporters.py \
             --model "$CHECKPOINT_DIR/vision/yolov8n_rail_best.pt" \
+            --outdir "$EXPORT_DIR" \
             --format onnx
 
     run_step "export_yolo_int8" \
         "$EXPORT_DIR/.yolo_int8.done" \
         python ml/inference/exporters.py \
             --model "$CHECKPOINT_DIR/vision/yolov8n_rail_best.pt" \
+            --outdir "$EXPORT_DIR" \
             --format int8
 fi
 
