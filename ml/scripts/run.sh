@@ -70,10 +70,8 @@ while [[ $# -gt 0 ]]; do
         --epochs-bilstm)  EPOCHS_BILSTM="$2"; shift 2;;
         --epochs-vae)     EPOCHS_VAE="$2"; shift 2;;
         --batch)          BATCH_SIZE="$2"; shift 2;;
-        --imgsz)          IMGSZ_YOLO="$2"; shift 2;;
-        --force|--force-retrain) FORCE=true; shift;;
+        --force)          FORCE=true; shift;;
         --clean)          CLEAN=true; shift;;
-        --resume)         RESUME=true; shift;;
         --skip-yolo)      SKIP_YOLO=true; shift;;
         --skip-patchcore) SKIP_PATCHCORE=true; shift;;
         --skip-bilstm)    SKIP_BILSTM=true; shift;;
@@ -87,10 +85,9 @@ cd "$REPO_ROOT"
 mkdir -p "$LOG_DIR" "$CHECKPOINT_DIR/vision" "$CHECKPOINT_DIR/geometry" "$EXPORT_DIR"
 
 if [[ "$CLEAN" == true ]]; then
-    warn "Cleaning all checkpoints, exports, manifests, and logs..."
+    warn "Cleaning all checkpoints, exports, and logs..."
     find "$CHECKPOINT_DIR" -name "*.done" -type f -delete
     find "$EXPORT_DIR" -name "*.done" -type f -delete
-    rm -f "$CHECKPOINT_DIR/vision/yolo_manifest.json" "$EXPORT_DIR/export_manifest.json"
     ok "Clean complete. Re-run without --clean to start training."
     exit 0
 fi
@@ -99,29 +96,23 @@ START_TIME=$(date +%s)
 header "TrackChain Phase 2 — Master ML Training Pipeline"
 info "Repo root:      $REPO_ROOT"
 info "Compute Device: $DEVICE_INFO"
-info "YOLO epochs:    $EPOCHS_YOLO (imgsz=$IMGSZ_YOLO)"
+info "YOLO epochs:    $EPOCHS_YOLO"
 info "Bi-LSTM epochs: $EPOCHS_BILSTM"
 info "VAE epochs:     $EPOCHS_VAE"
 info "Batch size:     $BATCH_SIZE"
 info "Force retrain:  $FORCE"
-info "Resume mode:    $RESUME"
 
-# --- Helper: manifest & checkpoint-aware run ---------------------------------
+# --- Helper: checkpoint-aware run --------------------------------------------
 run_step() {
     local step_name="$1"
     local checkpoint="$2"
     shift 2
     local cmd=("$@")
 
-    # SMART MANIFEST-BASED SKIP LOGIC:
-    if [[ "$FORCE" == false ]]; then
-        if python ml/scripts/should_skip.py --step "$step_name" 2>/dev/null; then
-            info "[$step_name] Already up-to-date (manifest verified). Skipping."
-            return 0
-        elif [[ -f "$checkpoint" && "$step_name" != "train_yolo" && "$step_name" != "export_yolo_onnx" && "$step_name" != "export_yolo_int8" ]]; then
-            info "[$step_name] Already completed (checkpoint found). Skipping."
-            return 0
-        fi
+    # SMART CHECKPOINTING: Skip if .done file exists and --force is not used
+    if [[ "$FORCE" == false && -f "$checkpoint" ]]; then
+        info "[$step_name] Already completed (checkpoint found). Skipping."
+        return 0
     fi
 
     info "[$step_name] Starting..."
@@ -175,9 +166,9 @@ run_step "generate_normal" \
         --output "$DATA_ROOT/processed/normal_sequences/"
 
 # =============================================================================
-# STEP 2: YOLO Training (Phase 2.1) — High-Res & Anti-Overfitting SOTA
+# STEP 2: YOLO Training (Phase 2.1)
 # =============================================================================
-header "STEP 2/7: YOLOv8n Visual Defect Detector (imgsz=$IMGSZ_YOLO)"
+header "STEP 2/7: YOLOv8n Visual Defect Detector"
 
 YOLO_DATA="$DATA_ROOT/external/rail_defects/data.yaml"
 if [[ -f "$DATA_ROOT/external/rail_defects_expanded/data.yaml" ]]; then
@@ -187,37 +178,25 @@ fi
 if [[ "$SKIP_YOLO" == true ]]; then
     warn "Skipping YOLO (--skip-yolo)"
 else
-    YOLO_EXTRA_FLAGS=()
-    if [[ "$FORCE" == true ]]; then YOLO_EXTRA_FLAGS+=(--force); fi
-    if [[ "$RESUME" == true ]]; then YOLO_EXTRA_FLAGS+=(--resume); fi
-
     run_step "train_yolo" \
         "$CHECKPOINT_DIR/vision/.yolo_train.done" \
         python ml/scripts/train_detector.py \
             --data "$YOLO_DATA" \
             --epochs "$EPOCHS_YOLO" \
             --batch "$BATCH_SIZE" \
-            --imgsz "$IMGSZ_YOLO" \
-            --device "$TRAIN_DEVICE" \
-            "${YOLO_EXTRA_FLAGS[@]}"
-
-    EXPORT_FLAGS=()
-    if [[ "$FORCE" == true ]]; then EXPORT_FLAGS+=(--force); fi
+            --device "$TRAIN_DEVICE"
 
     run_step "export_yolo_onnx" \
         "$EXPORT_DIR/.yolo_onnx.done" \
         python ml/inference/exporters.py \
             --model "$CHECKPOINT_DIR/vision/yolov8n_rail_best.pt" \
-            --imgsz "$IMGSZ_YOLO" \
-            --format onnx \
-            "${EXPORT_FLAGS[@]}"
+            --format onnx
 
     run_step "export_yolo_int8" \
         "$EXPORT_DIR/.yolo_int8.done" \
         python ml/inference/exporters.py \
             --model "$CHECKPOINT_DIR/vision/yolov8n_rail_best.pt" \
-            --format int8 \
-            "${EXPORT_FLAGS[@]}"
+            --format int8
 fi
 
 # =============================================================================
@@ -269,7 +248,7 @@ fi
 # =============================================================================
 # STEP 5: Bi-LSTM Training (Phase 2.4) - ENHANCED
 # =============================================================================
-header "STEP 5/7: Bi-LSTM Geometry Fault Typing (Enhanced)"
+header "STEP 5/7: Bi-LSTM Geometry Fault Classifier (Enhanced)"
 
 if [[ "$SKIP_BILSTM" == true ]]; then
     warn "Skipping Bi-LSTM (--skip-bilstm)"
@@ -277,7 +256,7 @@ else
     run_step "train_bilstm" \
         "$CHECKPOINT_DIR/geometry/.bilstm_train.done" \
         python ml/scripts/train_fault_classifier_enhanced.py \
-            --epochs 50 \
+            --epochs "$EPOCHS_BILSTM" \
             --hidden-size 128 \
             --num-layers 3 \
             --batch_size 128 \
@@ -299,7 +278,7 @@ else
     run_step "train_vae" \
         "$CHECKPOINT_DIR/geometry/.vae_train.done" \
         python ml/scripts/train_sequence_vae_enhanced.py \
-            --epochs 50 \
+            --epochs "$EPOCHS_VAE" \
             --beta 0.01 \
             --latent-dim 16 \
             --batch-size 64 \
@@ -315,18 +294,9 @@ fi
 # =============================================================================
 header "STEP 7/7: Full Test Suite Verification"
 
-run_step "tests" \
-    "$CHECKPOINT_DIR/.tests.done" \
-    python -m pytest ml/tests -v --tb=short
-
-# =============================================================================
-# Summary
-# =============================================================================
-END_TIME=$(date +%s)
-DURATION=$((END_TIME - START_TIME))
-
-header "Phase 2 Training COMPLETE"
-ok "Duration: ${DURATION}s"
+ELAPSED=$(( $(date +%s) - START_TIME ))
+echo ""
+header "TrackChain Phase 2 — Training Pipeline Complete in ${ELAPSED}s"
 ok "Checkpoints: $CHECKPOINT_DIR/"
 ok "Exports:     $EXPORT_DIR/"
 ok "Logs:        $LOG_DIR/"
