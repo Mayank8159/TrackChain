@@ -126,7 +126,7 @@ fi
 run_step "generate_trc" \
     "$CHECKPOINT_DIR/.trc_data.done" \
     python ml/scripts/generate_trc_telemetry.py \
-        --mode trc \
+        --mode telemetry \
         --output "$DATA_ROOT/processed/synthetic_trc_run_001.csv"
 
 run_step "generate_geometry" \
