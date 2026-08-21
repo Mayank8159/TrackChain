@@ -1,0 +1,15 @@
+version = 0.1
+
+[default.build.parameters]
+use_container = true
+docker_network = "host"
+image_uri = "trackchain-backend"
+
+[default.deploy.parameters]
+stack_name = "trackchain-prod"
+resolve_s3 = true
+s3_prefix = "trackchain"
+region = "ap-south-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+parameter_overrides = "Environment=production"

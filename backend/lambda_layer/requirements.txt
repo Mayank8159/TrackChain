@@ -1,12 +1,38 @@
-# Dependencies bundled in Lambda Layer (tc.v1 SOTA)
+# Lambda Layer dependencies — TrackChain Backend
+# Heavy / slow-to-install packages live here to speed up function deployments.
+# NOTE: For Docker-based Lambda (PackageType: Image), these are baked into the
+#       Dockerfile.lambda directly. This file is used for the ZIP-based fallback.
+
+# --- Core ---
 fastapi==0.110.0
 mangum==0.17.0
-sqlalchemy==2.0.28
-psycopg2-binary==2.9.9
 pydantic==2.6.4
 pydantic-settings==2.2.1
-pyjwt==2.8.0
-boto3==1.34.69
+python-multipart==0.0.9
+
+# --- Database ---
+sqlalchemy==2.0.28
+psycopg2-binary==2.9.9
 alembic==1.13.1
-pillow==10.2.0
+
+# --- AWS ---
+boto3==1.34.69
+
+# --- Security ---
+pyjwt==2.8.0
+
+# --- CV / ML (CPU-only wheels to keep layer < 250MB) ---
 numpy==1.26.4
+opencv-python-headless==4.9.0.80
+Pillow==10.2.0
+scipy>=1.12.0
+scikit-learn>=1.4.0
+
+# --- ML inference (optional — only needed if YOLO runs on Lambda) ---
+# Uncomment below ONLY if YOLO inference runs in Lambda (not recommended — prefer SageMaker / container)
+# ultralytics>=8.0.0
+# torch>=2.0.0
+# torchvision>=0.15.0
+
+# --- Observability ---
+prometheus_client>=0.20.0

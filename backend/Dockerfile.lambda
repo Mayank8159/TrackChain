@@ -1,0 +1,34 @@
+# =============================================================================
+# AWS Lambda Docker image — TrackChain Backend
+# Uses public.ecr.aws/lambda/python:3.11 (NOT slim — includes GL libs)
+# Multi-stage: build deps in stage 1, copy only runtime artifacts to stage 2
+# =============================================================================
+
+# ---- Stage 1: install Python deps into a layer-like layout ----
+FROM public.ecr.aws/lambda/python:3.11 AS builder
+
+RUN yum install -y gcc gcc-c++ libpq-devel cmake && yum clean all
+
+COPY requirements.txt /build/
+RUN pip install --no-cache-dir --target /build/deps -r /build/requirements.txt
+
+# ---- Stage 2: minimal runtime image ----
+FROM public.ecr.aws/lambda/python:3.11
+
+# OpenCV headless runtime libs (no GPU / X11)
+RUN yum install -y mesa-libGL glib2 libgomp && yum clean all
+
+# Copy installed deps
+COPY --from=builder /build/deps ${LAMBDA_TASK_ROOT}/
+
+# Copy application source
+COPY src/ ${LAMBDA_TASK_ROOT}/src/
+COPY alembic.ini ${LAMBDA_TASK_ROOT}/
+COPY alembic/ ${LAMBDA_TASK_ROOT}/alembic/ 2>/dev/null || true
+
+# Python path so `from src.xxx import ...` works
+ENV PYTHONPATH=${LAMBDA_TASK_ROOT}
+ENV ENVIRONMENT=production
+ENV LOG_LEVEL=INFO
+
+CMD ["src.main.handler"]

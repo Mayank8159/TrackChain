@@ -1,25 +1,36 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: TrackChain SOTA Serverless API Stack with RDS Proxy, Redis ElastiCache, S3 Media Bucket, Lambda Layer, and Automated Warmup
+Description: >
+  TrackChain Backend — AWS Lambda (FastAPI + Mangum + OpenCV + YOLO).
+  Frontend is on Vercel; this stack exposes the API only.
 
+# ---------------------------------------------------------------------------
+# Global Lambda defaults
+# ---------------------------------------------------------------------------
 Globals:
   Function:
     Timeout: 30
-    MemorySize: 1024
+    MemorySize: 1536
     Runtime: python3.11
     Architectures:
       - x86_64
+    Tracing: Active
     Environment:
       Variables:
         ENVIRONMENT: production
         LOG_LEVEL: INFO
+        AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
         DATABASE_URL: !Sub "postgresql+psycopg2://${DBUser}:${DBPassword}@${RDSEndpoint}:5432/trackchain"
         REDIS_URL: !Sub "redis://${ElastiCacheRedisEndpoint}:6379/0"
         S3_BUCKET_NAME: !Ref MediaBucket
         JWT_SECRET_KEY: !Ref JWTSecret
         API_KEY_SECRET: !Ref APIKeySecret
         REQUEST_SIGNING_SECRET: !Ref RequestSigningSecret
+        CORS_ORIGINS: !Sub "https://${FrontendDomain}"
 
+# ---------------------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------------------
 Parameters:
   DBUser:
     Type: String
@@ -29,10 +40,10 @@ Parameters:
     NoEcho: true
   RDSEndpoint:
     Type: String
-    Default: trackchain-db.cluster-cxyz.us-east-1.rds.amazonaws.com
+    Description: RDS Proxy or cluster endpoint (no port, no scheme)
   ElastiCacheRedisEndpoint:
     Type: String
-    Default: trackchain-redis.cache.amazonaws.com
+    Description: Redis cluster / Elasticache endpoint
   JWTSecret:
     Type: String
     NoEcho: true
@@ -42,52 +53,106 @@ Parameters:
   RequestSigningSecret:
     Type: String
     NoEcho: true
+  FrontendDomain:
+    Type: String
+    Default: trackchain.vercel.app
+    Description: Allowed CORS origin (Vercel frontend domain)
 
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
 Resources:
-  # Main FastAPI Lambda Function
-  TrackChainAPI:
+
+  # ---- API Gateway ----
+  TrackChainApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-api"
+      StageName: Prod
+      TracingEnabled: true
+      Cors:
+        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+        AllowHeaders: "'Authorization,Content-Type,X-Device-ID,X-Idempotency-Key,X-Signature'"
+        AllowOrigin: !Sub "'https://${FrontendDomain}'"
+      BinaryMediaTypes:
+        - "image/*"
+        - "application/octet-stream"
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingBurstLimit: 200
+          ThrottlingRateLimit: 100
+
+  # ---- Main Lambda Function (Docker image) ----
+  TrackChainFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: trackchain-api
-      Handler: src.main.handler
-      CodeUri: ./
-      Layers:
-        - !Ref TrackChainDependenciesLayer
+      PackageType: Image
+      ImageUri: trackchain-backend
+      MemorySize: 1536
+      Timeout: 30
+      ReservedConcurrentExecutions: 50
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          ENVIRONMENT: production
+          LOG_LEVEL: INFO
+          DATABASE_URL: !Sub "postgresql+psycopg2://${DBUser}:${DBPassword}@${RDSEndpoint}:5432/trackchain"
+          REDIS_URL: !Sub "redis://${ElastiCacheRedisEndpoint}:6379/0"
+          S3_BUCKET_NAME: !Ref MediaBucket
+          JWT_SECRET_KEY: !Ref JWTSecret
+          API_KEY_SECRET: !Ref APIKeySecret
+          REQUEST_SIGNING_SECRET: !Ref RequestSigningSecret
+          CORS_ORIGINS: !Sub "https://${FrontendDomain}"
       Events:
         ApiRoot:
           Type: Api
           Properties:
+            RestApiId: !Ref TrackChainApi
             Path: /
             Method: ANY
         ApiProxy:
           Type: Api
           Properties:
+            RestApiId: !Ref TrackChainApi
             Path: /{proxy+}
             Method: ANY
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref MediaBucket
+        - CloudWatchPutMetricPolicy: {}
+        - Version:
+            - "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - xray:PutTraceSegments
+                - xray:PutTelemetryRecords
+              Resource: "*"
 
-  # Lambda Layer for Heavy Dependencies
+  # ---- Lambda Layer (shared deps) ----
   TrackChainDependenciesLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
-      LayerName: trackchain-dependencies-layer
+      LayerName: trackchain-deps
       ContentUri: lambda_layer/trackchain-layer.zip
       CompatibleRuntimes:
         - python3.11
       RetentionPolicy: Retain
 
-  # S3 Media Bucket with CORS for direct upload and HLS streaming
+  # ---- S3 Media Bucket ----
   MediaBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "trackchain-media-${AWS::AccountId}"
       CorsConfiguration:
         CorsRules:
-          - AllowedHeaders: ['*']
+          - AllowedHeaders: ["*"]
             AllowedMethods: [GET, PUT, POST, HEAD]
-            AllowedOrigins: ['*']
+            AllowedOrigins:
+              - !Sub "https://${FrontendDomain}"
             MaxAge: 3600
       LifecycleConfiguration:
         Rules:
@@ -95,30 +160,69 @@ Resources:
             Status: Enabled
             ExpirationInDays: 180
 
-  # Scheduled CloudWatch Event Rule to keep Lambda warm
+  # ---- Scheduled warmup (prevent cold starts) ----
   WarmupSchedule:
     Type: AWS::Events::Rule
     Properties:
-      Description: Prevent Lambda cold starts with 5-minute ping
+      Description: Keep Lambda warm — 5-minute ping
       ScheduleExpression: rate(5 minutes)
       Targets:
-        - Arn: !GetAtt TrackChainAPI.Arn
+        - Arn: !GetAtt TrackChainFunction.Arn
           Id: WarmupTarget
-          Input: '{"path": "/api/v1/warmup", "httpMethod": "GET"}'
+          Input: '{"path":"/warmup","httpMethod":"GET"}'
 
-  # Permission for CloudWatch to invoke Lambda
   WarmupPermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !Ref TrackChainAPI
+      FunctionName: !Ref TrackChainFunction
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt WarmupSchedule.Arn
 
+  # ---- CloudWatch Alarms ----
+  LatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: trackchain-high-latency
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 10000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref TrackChainFunction
+
+  ErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: trackchain-high-errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref TrackChainFunction
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
 Outputs:
   ApiEndpoint:
     Description: Production API Gateway URL
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+    Value: !Sub "https://${TrackChainApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  FunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt TrackChainFunction.Arn
   S3MediaBucket:
-    Description: S3 Media Storage Bucket
+    Description: S3 media storage bucket
     Value: !Ref MediaBucket
+  ApiId:
+    Description: API Gateway REST API ID (for custom domain mapping)
+    Value: !Ref TrackChainApi
