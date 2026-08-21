@@ -1,9 +1,10 @@
-// Interactive canvas viewer displaying edge video frame stream with rail & sleeper line overlay.
+// Interactive canvas viewer displaying edge video frame stream with rail & sleeper line overlay (tc.v1).
 
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import type { LineGeometry } from "../lib/types";
+import { getDeterministicLineGeometries } from "../lib/mock-provider";
 
 interface FrameData {
   camera_id: string;
@@ -14,54 +15,24 @@ interface FrameData {
   timestamp: string;
 }
 
-const MOCK_CAMERAS = ["CAM-SECTOR-A1", "CAM-SECTOR-B3", "CAM-SECTOR-C2"];
 const WIDTH = 640;
 const HEIGHT = 480;
 
-function generateMockLines(): LineGeometry[] {
-  const lines: LineGeometry[] = [];
-  const railY1 = 180 + Math.random() * 10 - 5;
-  const railY2 = 300 + Math.random() * 10 - 5;
+// Deterministic gravel dots coordinates for canvas texture background
+const STATIC_GRAVEL_DOTS = Array.from({ length: 60 }).map((_, i) => ({
+  x: ((i * 73 + 19) % WIDTH),
+  y: ((i * 97 + 31) % HEIGHT),
+  r: 0.8 + ((i % 3) * 0.4),
+}));
 
-  lines.push({
-    x1: 20,
-    y1: railY1,
-    x2: WIDTH - 20,
-    y2: railY1 + (Math.random() * 4 - 2),
-    angle_deg: +(Math.random() * 2 - 1).toFixed(2),
-    length: +(WIDTH - 40 + Math.random() * 10).toFixed(2),
-  });
-  lines.push({
-    x1: 20,
-    y1: railY2,
-    x2: WIDTH - 20,
-    y2: railY2 + (Math.random() * 4 - 2),
-    angle_deg: +(Math.random() * 2 - 1).toFixed(2),
-    length: +(WIDTH - 40 + Math.random() * 10).toFixed(2),
-  });
-
-  const sleeperCount = 8 + Math.floor(Math.random() * 4);
-  for (let i = 0; i < sleeperCount; i++) {
-    const x = 60 + (i * (WIDTH - 120)) / (sleeperCount - 1) + Math.random() * 8 - 4;
-    lines.push({
-      x1: x,
-      y1: railY1 + 10,
-      x2: x + (Math.random() * 6 - 3),
-      y2: railY2 - 10,
-      angle_deg: +(85 + Math.random() * 10).toFixed(2),
-      length: +(railY2 - railY1 - 20 + Math.random() * 10).toFixed(2),
-    });
-  }
-  return lines;
-}
-
-function mockFrame(): FrameData {
+function getDeterministicFrame(): FrameData {
+  const lines = getDeterministicLineGeometries(WIDTH, HEIGHT);
   return {
-    camera_id: MOCK_CAMERAS[Math.floor(Math.random() * MOCK_CAMERAS.length)],
+    camera_id: "CAM-LEFT-RAIL-01",
     resolution: [WIDTH, HEIGHT],
-    line_count: 0,
-    lines: generateMockLines(),
-    processing_ms: +(8 + Math.random() * 15).toFixed(2),
+    line_count: lines.length,
+    lines,
+    processing_ms: 12.4,
     timestamp: new Date().toISOString(),
   };
 }
@@ -100,12 +71,17 @@ function OverlayCanvas({ lines }: { lines: LineGeometry[] }) {
 }
 
 export function FrameViewer() {
-  const [frame, setFrame] = useState<FrameData>(mockFrame);
+  const [frame, setFrame] = useState<FrameData>(getDeterministicFrame);
   const [isLive, setIsLive] = useState(true);
 
   useEffect(() => {
     if (!isLive) return;
-    const id = setInterval(() => setFrame(mockFrame()), 1200);
+    const id = setInterval(() => {
+      setFrame((prev) => ({
+        ...prev,
+        timestamp: new Date().toISOString(),
+      }));
+    }, 1000);
     return () => clearInterval(id);
   }, [isLive]);
 
@@ -119,9 +95,9 @@ export function FrameViewer() {
           </h2>
           <span className="badge-cyan">{frame.camera_id}</span>
           {isLive && (
-            <span className="badge-red">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-scada-red" />
-              LIVE
+            <span className="badge-green">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-scada-green" />
+              FEED SYNCED
             </span>
           )}
         </div>
@@ -160,15 +136,15 @@ export function FrameViewer() {
           </defs>
           <rect width={WIDTH} height={HEIGHT} fill="url(#spot)" />
 
-          {/* Gravel texture dots */}
-          {Array.from({ length: 80 }).map((_, i) => (
+          {/* Gravel texture dots (deterministic) */}
+          {STATIC_GRAVEL_DOTS.map((dot, i) => (
             <circle
               key={i}
-              cx={Math.random() * WIDTH}
-              cy={Math.random() * HEIGHT}
-              r={0.5 + Math.random() * 1.5}
+              cx={dot.x}
+              cy={dot.y}
+              r={dot.r}
               fill="#334155"
-              opacity={0.3 + Math.random() * 0.3}
+              opacity={0.4}
             />
           ))}
         </svg>

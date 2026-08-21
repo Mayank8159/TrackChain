@@ -1,4 +1,4 @@
-// Video playback synced with telemetry graphs; seeks to defect timestamps.
+// Video playback synced with telemetry graphs; seeks to defect timestamps (tc.v1).
 
 "use client";
 
@@ -8,39 +8,15 @@ import { Header } from "@/components/Header";
 import { Card } from "@/components/ui/Card";
 import { TelemetryChart } from "@/components/charts/TelemetryChart";
 import { StatBadge } from "@/components/ui/StatBadge";
+import { useTelemetry } from "@/hooks/useTelemetry";
+import { MOCK_TELEMETRY_SERIES } from "@/lib/mock-provider";
 import type { TelemetryPoint } from "@/lib/types";
-
-// Generate synthetic telemetry points synced along a 60-second inspection video clip
-function generateSyncedTelemetry(): TelemetryPoint[] {
-  const points: TelemetryPoint[] = [];
-  for (let i = 0; i <= 60; i++) {
-    const chainage = 12000 + i * 20; // 20 meters per second (~72 km/h)
-    const hasAnomaly = i >= 25 && i <= 30;
-    const speedKmh = 72 + Math.sin(i / 5) * 2;
-
-    points.push({
-      id: `tel-${i}`,
-      sessionId: "SES-20260821-01",
-      timestamp: new Date(Date.now() - (60 - i) * 1000).toISOString(),
-      chainageM: chainage,
-      speedMps: speedKmh / 3.6,
-      speedKmh: speedKmh,
-      vibrationRms: hasAnomaly ? 2.8 + Math.random() * 0.8 : 0.8 + Math.random() * 0.3,
-      trackGaugeMm: hasAnomaly ? 1446 + Math.random() * 3 : 1435 + (Math.random() * 2 - 1),
-      cantMm: 12 + Math.sin(i / 10) * 5,
-      twistMmPerM: hasAnomaly ? 3.8 + Math.random() * 0.5 : 1.2 + Math.random() * 0.4,
-      verticalUnevennessMm: hasAnomaly ? 5.2 : 1.1,
-      alignmentDevMm: hasAnomaly ? 7.4 : 1.8,
-    });
-  }
-  return points;
-}
 
 export default function VideoPlaybackPage() {
   const searchParams = useSearchParams();
   const seekParam = searchParams ? searchParams.get("seek") : null;
 
-  const [telemetryData] = useState<TelemetryPoint[]>(generateSyncedTelemetry);
+  const { data: telemetryData = MOCK_TELEMETRY_SERIES, isDemoData } = useTelemetry("ses-delhi-agra-001");
   const [currentSec, setCurrentSec] = useState<number>(
     seekParam ? Math.min(Number(seekParam) % 60, 60) : 0
   );
@@ -58,20 +34,23 @@ export default function VideoPlaybackPage() {
   }, [isPlaying]);
 
   const currentPoint =
-    telemetryData[Math.floor(currentSec)] || telemetryData[0];
+    telemetryData[Math.floor(currentSec)] || telemetryData[0] || MOCK_TELEMETRY_SERIES[0];
 
   return (
-    <div className="min-h-screen flex flex-col bg-scada-bg text-scada-text font-sans">
-      <Header />
-      <div className="glow-line" />
-
-      <main className="flex-1 p-4 lg:p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full">
+    <div className="p-4 lg:p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full">
         {/* Title */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold font-mono tracking-wider text-scada-text uppercase">
-              Synchronized Video & Telemetry Playback
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-bold font-mono tracking-wider text-scada-text uppercase">
+                Synchronized Video & Telemetry Playback
+              </h1>
+              {isDemoData && (
+                <span className="badge-cyan text-[9px] font-mono font-bold">
+                  [DEMO MODE: DETERMINISTIC]
+                </span>
+              )}
+            </div>
             <p className="text-xs font-mono text-scada-muted">
               Correlated optical video and high-frequency IMU sensor feeds
             </p>
@@ -272,7 +251,6 @@ export default function VideoPlaybackPage() {
             height={160}
           />
         </Card>
-      </main>
-    </div>
+      </div>
   );
 }
