@@ -206,9 +206,18 @@ export function ImageViewport({
             src={imageSrc}
             alt="Track Inspection Frame"
             onLoad={handleImageLoad}
-            className="max-h-[460px] max-w-[620px] object-contain rounded-lg border border-slate-700 shadow-2xl pointer-events-none"
+            className={`max-h-[460px] max-w-[620px] object-contain rounded-lg border shadow-2xl pointer-events-none transition-all ${
+              inferenceResult?.vision_status === "DEGRADED"
+                ? "border-amber-500/80 shadow-[0_0_30px_rgba(245,158,11,0.25)]"
+                : "border-slate-700"
+            }`}
             draggable={false}
           />
+
+          {/* Honest Degradation Atmospheric Amber Wash */}
+          {inferenceResult?.vision_status === "DEGRADED" && (
+            <div className="absolute inset-0 rounded-lg bg-amber-500/15 mix-blend-color-dodge pointer-events-none" />
+          )}
 
           {/* SVG Vector Overlay Scaled Exactly to Image Dimensions */}
           {hasResult && (
