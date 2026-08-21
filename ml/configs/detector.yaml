@@ -1,6 +1,6 @@
 # ============================================================================
 # TrackChain YOLOv8n Defect Detector Configuration (tc.v1 SOTA)
-# Upgraded for small dataset efficiency, small-object sensitivity & anti-overfitting
+# Fast full-network fine-tuning without backbone freezing
 # ============================================================================
 
 task: detect
@@ -9,28 +9,28 @@ mode: train
 model:
   name: "yolov8n.pt"
   architecture: "CSPDarknet-C2f-DecoupledHead"
-  input_size: [960, 960]
+  input_size: [640, 640]
   confidence_threshold: 0.25
   iou_threshold: 0.60
   max_detections: 100
 
 training:
-  epochs: 80
-  batch_size: 8
+  epochs: 50
+  batch_size: 16
   optimizer: "AdamW"
-  lr0: 0.001
+  lr0: 0.0008
   lrf: 0.01
   momentum: 0.937
   weight_decay: 0.0005
-  warmup_epochs: 3.0
+  warmup_epochs: 5.0
   warmup_momentum: 0.8
   warmup_bias_lr: 0.1
   cos_lr: true
-  patience: 20
-  close_mosaic: 10
-  freeze: 10
-  dropout: 0.1
-  erasing: 0.2
+  patience: 40
+  close_mosaic: 30
+  freeze: null
+  dropout: 0.0
+  erasing: 0.4
   box_loss_weight: 7.5
   cls_loss_weight: 0.5
   dfl_loss_weight: 1.5
@@ -48,10 +48,10 @@ augmentations:
   fliplr: 0.5
   mosaic: 1.0
   mixup: 0.15
-  copy_paste: 0.5
+  copy_paste: 0.3
 
 validation:
-  conf: 0.25
+  conf: 0.001
   iou: 0.60
   split: "test"
 
