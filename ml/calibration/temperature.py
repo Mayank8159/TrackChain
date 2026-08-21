@@ -18,11 +18,15 @@ class TemperatureScaler(nn.Module):
         self.temperature = nn.Parameter(torch.ones(1) * float(temperature))
 
     def forward(self, logits: torch.Tensor) -> torch.Tensor:
+        if logits.dim() == 1:
+            logits = logits.unsqueeze(1)
         temperature = self.temperature.unsqueeze(1).expand(logits.size(0), logits.size(1))
         return logits / torch.clamp(temperature, min=1e-4)
 
     def fit(self, val_logits: np.ndarray, val_labels: np.ndarray, lr: float = 0.01, max_iter: int = 50) -> float:
         """Fit optimal temperature using NLL loss on validation set."""
+        if val_logits.ndim == 1:
+            val_logits = val_logits[:, None]
         logits_t = torch.from_numpy(val_logits).float()
         labels_t = torch.from_numpy(val_labels).long()
 
@@ -40,6 +44,8 @@ class TemperatureScaler(nn.Module):
 
     def calibrate_probs(self, logits: np.ndarray) -> np.ndarray:
         with torch.no_grad():
+            if logits.ndim == 1:
+                logits = logits[:, None]
             scaled = self.forward(torch.from_numpy(logits).float())
             probs = torch.softmax(scaled, dim=1).numpy()
         return probs

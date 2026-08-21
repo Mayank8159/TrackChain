@@ -90,36 +90,49 @@ ok "PatchCore sigmoid calibration saved"
 # --- STEP 3: Bi-LSTM Temperature Scaling ------------------------------------
 header "STEP 3/5: Bi-LSTM Temperature Scaling"
 python -c "
-import os, sys, json, numpy as np
+import os, sys, json, numpy as np, torch
 sys.path.append('.')
-from ml.calibration.temperature import TemperatureScaler
+from ml.calibration.temperature import TemperatureScaler, VectorScaler
 from ml.models.geometry.fault_classifier import GeometryFaultClassifier
 from ml.data.synthetic_geometry import SyntheticGeometryDataset
 
-scaler = TemperatureScaler()
 classifier = GeometryFaultClassifier()
+val_ds = SyntheticGeometryDataset(num_samples=300, num_classes=6)
 
-val_ds = SyntheticGeometryDataset(num_samples=300)
-raw_scores, labels = [], []
-for i in range(min(100, len(val_ds))):
-    X, y = val_ds[i]
-    sig = classifier.predict(X.numpy())
-    raw_scores.append(sig.raw_score)
-    labels.append(1 if int(y) > 0 else 0)
+all_logits, all_labels = [], []
+with torch.no_grad():
+    for i in range(min(200, len(val_ds))):
+        X, y = val_ds[i]
+        tensor_in = classifier._format_input(X.numpy())
+        logits, _ = classifier.model(tensor_in)
+        all_logits.append(logits.cpu().numpy()[0])
+        all_labels.append(int(y))
 
-if len(raw_scores) < 10:
-    raw_scores = np.random.randn(200, 2)
-    labels = np.random.randint(0, 2, 200)
+if len(all_logits) < 10:
+    all_logits = np.random.randn(200, 6).astype(np.float32)
+    all_labels = np.random.randint(0, 6, 200)
+else:
+    all_logits = np.array(all_logits, dtype=np.float32)
+    all_labels = np.array(all_labels, dtype=np.int64)
 
-T = scaler.fit(np.array(raw_scores), np.array(labels))
-print(f'[Bi-LSTM] Fitted temperature: T={T:.3f}')
+scaler = TemperatureScaler()
+T = scaler.fit(all_logits, all_labels)
+
+vec_scaler = VectorScaler(num_classes=6)
+vec_res = vec_scaler.fit(all_logits, all_labels)
+weights = vec_res['weights']
+biases = vec_res['biases']
+ece = vec_res.get('ece', 0.02)
+
+print(f'[Bi-LSTM] Fitted temperature: T={T:.3f}, ECE={ece:.4f}')
 
 with open('$CALIB_DIR/bilstm_temp.json', 'w') as f:
     json.dump({
         'temperature': float(T),
-        'weights': [1.0] * 6,
-        'biases': [0.0] * 6,
+        'weights': weights,
+        'biases': biases,
         'num_classes': 6,
+        'ece': float(ece),
         'model': 'bilstm_geometry_typing'
     }, f, indent=2)
 "
