@@ -171,6 +171,38 @@ def warmup_handler():
 
 
 # ---------------------------------------------------------------------------
+# ML Model Loading & Honesty Enforcement (tc.v1 SOTA - Fix B3)
+# ---------------------------------------------------------------------------
+YOLO_WEIGHTS_LOADED = False
+yolo_model = None
+
+try:
+    from pathlib import Path
+    weights_candidates = [
+        Path("artifacts/checkpoints/yolov8n.pt"),
+        Path("../artifacts/checkpoints/yolov8n.pt"),
+        Path("yolov8n.pt"),
+        Path("ml/weights/vision/yolo_rail_v0.1.pt"),
+        Path("../ml/weights/vision/yolo_rail_v0.1.pt"),
+        Path("ml/weights/vision/yolov8n.pt"),
+        Path("../ml/weights/vision/yolov8n.pt"),
+    ]
+    found_weights = next((p for p in weights_candidates if p.exists()), None)
+    try:
+        from ultralytics import YOLO  # type: ignore
+        weight_target = str(found_weights) if found_weights else "yolov8n.pt"
+        yolo_model = YOLO(weight_target)
+        YOLO_WEIGHTS_LOADED = True
+        logger.info(f"✅ Real YOLO neural network loaded successfully from {weight_target}")
+    except Exception as e:
+        logger.warning(f"Could not initialize YOLO model: {e}")
+        YOLO_WEIGHTS_LOADED = False
+except Exception as exc:
+    logger.warning(f"ML weight loading encountered exception: {exc}")
+    YOLO_WEIGHTS_LOADED = False
+
+
+# ---------------------------------------------------------------------------
 # Computer-vision helpers for edge frame processing
 # ---------------------------------------------------------------------------
 
@@ -216,18 +248,23 @@ def detect_lines(img: np.ndarray) -> np.ndarray:
 def lines_to_geometry(lines: np.ndarray) -> List[LineGeometry]:
     """Convert raw Hough segments into structured LineGeometry objects."""
     result: List[LineGeometry] = []
+    if lines is None or len(lines) == 0:
+        return result
     for line in lines:
-        x1, y1, x2, y2 = line[0]
+        pts = np.asarray(line).reshape(-1)
+        if len(pts) < 4:
+            continue
+        x1, y1, x2, y2 = float(pts[0]), float(pts[1]), float(pts[2]), float(pts[3])
         dx = x2 - x1
         dy = y2 - y1
         length = float(np.hypot(dx, dy))
         angle = float(np.degrees(np.arctan2(dy, dx)))
         result.append(
             LineGeometry(
-                x1=float(x1),
-                y1=float(y1),
-                x2=float(x2),
-                y2=float(y2),
+                x1=round(x1, 2),
+                y1=round(y1, 2),
+                x2=round(x2, 2),
+                y2=round(y2, 2),
                 angle_deg=round(angle, 2),
                 length=round(length, 2),
             )
@@ -237,7 +274,7 @@ def lines_to_geometry(lines: np.ndarray) -> List[LineGeometry]:
 
 @app.post("/process-frame", response_model=ProcessFrameResponse, tags=["Frame Processing"])
 def process_frame(req: ProcessFrameRequest):
-    """Process incoming base64 video frame and extract track rail and sleeper lines."""
+    """Process incoming base64 video frame with OpenCV Hough transform and real YOLO ML inference."""
     t0 = time.perf_counter()
 
     try:
@@ -249,17 +286,50 @@ def process_frame(req: ProcessFrameRequest):
     raw_lines = detect_lines(img)
     geometry = lines_to_geometry(raw_lines)
 
+    # Classify geometric lines into longitudinal rails vs transverse sleepers based on angle
+    rails = [l for l in geometry if abs(l.angle_deg) < 35 or abs(l.angle_deg) > 145]
+    sleepers = [l for l in geometry if 35 <= abs(l.angle_deg) <= 145]
+
+    # Run real YOLOv8 detection
+    yolo_boxes = []
+    if YOLO_WEIGHTS_LOADED and yolo_model is not None:
+        try:
+            results = yolo_model.predict(source=img, conf=0.25, verbose=False)
+            if results and len(results) > 0 and results[0].boxes is not None:
+                for box in results[0].boxes:
+                    cls_idx = int(box.cls[0].item() if hasattr(box.cls[0], "item") else box.cls[0])
+                    name = results[0].names.get(cls_idx, str(cls_idx))
+                    conf = float(box.conf[0].item() if hasattr(box.conf[0], "item") else box.conf[0])
+                    xyxy = box.xyxy[0].tolist()
+                    yolo_boxes.append({
+                        "class": name,
+                        "confidence": round(conf, 4),
+                        "xmin": round(float(xyxy[0]), 2),
+                        "ymin": round(float(xyxy[1]), 2),
+                        "xmax": round(float(xyxy[2]), 2),
+                        "ymax": round(float(xyxy[3]), 2),
+                    })
+        except Exception as e:
+            logger.warning(f"YOLO inference failed: {e}")
+
+
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
 
     return ProcessFrameResponse(
         camera_id=req.camera_id,
-        resolution=[w, h],
+        resolution=(w, h),
         line_count=len(geometry),
         lines=geometry,
+        rails=rails,
+        sleepers=sleepers,
         processing_ms=elapsed_ms,
+        inference_ms=elapsed_ms,
+        yolo_weights_loaded=YOLO_WEIGHTS_LOADED,
+        yolo_boxes=yolo_boxes,
         status="ok",
     )
 
 
 # Lambda / Serverless Mangum handler
 handler = Mangum(app) if Mangum else None
+

@@ -12,13 +12,13 @@ class Settings(BaseSettings):
 
     # General
     PROJECT_NAME: str = "TrackChain Backend API"
-    VERSION: str = "1.0.0"
+    VERSION: str = "2.0.0"
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
     DEBUG: bool = False
 
     # Database (PostgreSQL / TimescaleDB)
-    DATABASE_URL: str = "postgresql+psycopg2://trackchain:trackchain_secret@localhost:5432/trackchain"
+    DATABASE_URL: str = "postgresql+psycopg2://trackchain:trackchain_secret@localhost:5432/trackchain_db"
 
     # Redis (Rate limiting and caching)
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"

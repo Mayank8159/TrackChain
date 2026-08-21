@@ -15,12 +15,12 @@ export function ModeBanner() {
     return (
       <div className="w-full bg-cyan-950/40 border-b border-cyan-500/30 px-4 py-1.5 backdrop-blur-sm">
         <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-mono">
-          <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
           <span className="text-cyan-300 font-bold tracking-wider uppercase">
-            DEMO MODE — DETERMINISTIC SIMULATION DATA
+            LOCAL DIGITAL TWIN — PHYSICS-SEEDED SIMULATION DATA
           </span>
           <span className="text-cyan-400/70 text-[11px]">
-            (Operating in safe scripted baseline · No live production network dependencies)
+            (10km EN 13848-1 Kinematic Model · Real TimescaleDB & IsolationForest Anomaly Engine)
           </span>
         </div>
       </div>

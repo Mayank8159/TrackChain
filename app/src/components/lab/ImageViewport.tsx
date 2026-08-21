@@ -151,6 +151,20 @@ export function ImageViewport({
           </div>
         )}
 
+        {hasResult && yoloLoaded && yoloBoxes.length === 0 && !isLoading && (
+          <div className="flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 px-2.5 py-1 text-[11px] font-mono rounded shadow-lg backdrop-blur-sm">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            <span>YOLOv8n: 0 Anomalies Detected (Nominal Track Surface)</span>
+          </div>
+        )}
+
+        {hasResult && yoloLoaded && yoloBoxes.length > 0 && (
+          <div className="flex items-center gap-1.5 bg-red-500/20 border border-red-500/50 text-red-300 px-2.5 py-1 text-[11px] font-mono rounded shadow-lg backdrop-blur-sm">
+            <span className="h-2 w-2 rounded-full bg-red-400 animate-ping" />
+            <span>YOLOv8n: {yoloBoxes.length} Object{yoloBoxes.length > 1 ? "s" : ""} Flagged</span>
+          </div>
+        )}
+
         {isSimulated && (
           <div className="flex items-center gap-1.5 bg-blue-500/20 border border-blue-500/50 text-blue-300 px-2.5 py-1 text-[11px] font-mono rounded shadow-lg backdrop-blur-sm">
             <Sparkles size={13} className="text-blue-400" />
@@ -189,24 +203,24 @@ export function ImageViewport({
               {rails.map((line, idx) => (
                 <g key={`rail-${idx}`}>
                   <line
-                    x1={line.x1}
-                    y1={line.y1}
-                    x2={line.x2}
-                    y2={line.y2}
+                    x1={Number(line.x1)}
+                    y1={Number(line.y1)}
+                    x2={Number(line.x2)}
+                    y2={Number(line.y2)}
                     stroke="#00F0FF"
                     strokeWidth="3"
                     strokeDasharray="6 3"
                     className="animate-pulse"
                   />
                   <text
-                    x={(line.x1 + line.x2) / 2 + 6}
-                    y={(line.y1 + line.y2) / 2}
+                    x={(Number(line.x1) + Number(line.x2)) / 2 + 6}
+                    y={(Number(line.y1) + Number(line.y2)) / 2}
                     fill="#00F0FF"
                     fontSize="10"
                     fontFamily="monospace"
                     fontWeight="bold"
                   >
-                    Rail θ:{Math.round(line.theta_deg || 0)}°
+                    Rail θ:{Math.round(Number(line.theta_deg) || 0)}°
                   </text>
                 </g>
               ))}
@@ -215,10 +229,10 @@ export function ImageViewport({
               {sleepers.map((line, idx) => (
                 <line
                   key={`sleeper-${idx}`}
-                  x1={line.x1}
-                  y1={line.y1}
-                  x2={line.x2}
-                  y2={line.y2}
+                  x1={Number(line.x1)}
+                  y1={Number(line.y1)}
+                  x2={Number(line.x2)}
+                  y2={Number(line.y2)}
                   stroke="#10B981"
                   strokeWidth="2"
                   opacity="0.85"
@@ -228,13 +242,20 @@ export function ImageViewport({
               {/* YOLO Bounding Boxes (Rendered ONLY if weights loaded) */}
               {yoloLoaded &&
                 yoloBoxes.map((box, idx) => {
-                  const width = box.xmax - box.xmin;
-                  const height = box.ymax - box.ymin;
+                  const xmin = Number(box.xmin) || 0;
+                  const ymin = Number(box.ymin) || 0;
+                  const xmax = Number(box.xmax) || 0;
+                  const ymax = Number(box.ymax) || 0;
+                  const width = Math.max(0, xmax - xmin);
+                  const height = Math.max(0, ymax - ymin);
+                  const label = box.class || "object";
+                  const conf = Number(box.confidence) || 0;
+
                   return (
                     <g key={`box-${idx}`}>
                       <rect
-                        x={box.xmin}
-                        y={box.ymin}
+                        x={xmin}
+                        y={ymin}
                         width={width}
                         height={height}
                         fill="rgba(239, 68, 68, 0.15)"
@@ -243,22 +264,22 @@ export function ImageViewport({
                         rx="2"
                       />
                       <rect
-                        x={box.xmin}
-                        y={Math.max(0, box.ymin - 18)}
-                        width={Math.max(100, (box.class.length + 6) * 7)}
+                        x={xmin}
+                        y={Math.max(0, ymin - 18)}
+                        width={Math.max(100, (label.length + 6) * 7)}
                         height="18"
                         fill="#EF4444"
                         rx="2"
                       />
                       <text
-                        x={box.xmin + 4}
-                        y={Math.max(12, box.ymin - 5)}
+                        x={xmin + 4}
+                        y={Math.max(12, ymin - 5)}
                         fill="#FFFFFF"
                         fontSize="10"
                         fontFamily="monospace"
                         fontWeight="bold"
                       >
-                        {box.class} ({(box.confidence * 100).toFixed(0)}%)
+                        {label} ({(conf * 100).toFixed(0)}%)
                       </text>
                     </g>
                   );
@@ -266,12 +287,18 @@ export function ImageViewport({
             </svg>
           )}
 
-          {/* Loading Indicator Spinner */}
+          {/* Holographic Neural Processing Overlay */}
           {isLoading && (
-            <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] rounded-lg flex items-center justify-center">
-              <div className="flex flex-col items-center gap-2 font-mono text-cyan-400 text-xs">
-                <div className="h-8 w-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
-                <span>Running Computer Vision Inference...</span>
+            <div className="absolute inset-0 bg-slate-950/75 backdrop-blur-[3px] rounded-lg flex items-center justify-center transition-all">
+              <div className="flex flex-col items-center gap-3 font-mono text-cyan-400 text-xs p-4 rounded-xl border border-cyan-500/40 bg-slate-900/90 shadow-2xl">
+                <div className="relative flex items-center justify-center">
+                  <div className="h-10 w-10 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+                  <Sparkles size={16} className="absolute text-cyan-300 animate-pulse" />
+                </div>
+                <div className="flex flex-col items-center gap-1 text-center">
+                  <span className="font-bold tracking-wider text-cyan-300">YOLOv8n Neural Forward Pass</span>
+                  <span className="text-[10px] text-cyan-400/70">Edge Computer Vision Inference (~57ms)...</span>
+                </div>
               </div>
             </div>
           )}

@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -11,12 +11,16 @@ import {
   Marker,
   Tooltip,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getSeverityMeta } from "../../lib/severity";
 import { formatChainage, formatConfidence } from "../../lib/format";
-import type { DefectEvent } from "../../lib/types";
+import type { DefectEvent, Device } from "../../lib/types";
+import { useCollabStore } from "../../stores/collab-store";
+import { useDeviceStore } from "../../stores/device-store";
+import type { Annotation } from "@trackchain/shared";
 
 export interface TrackMapProps {
   defects?: DefectEvent[];
@@ -154,11 +158,89 @@ function createDefectIcon(defect: DefectEvent, isSelected: boolean) {
   });
 }
 
+function createAnnotationIcon(annotation: Annotation) {
+  const colorClass = annotation.author.avatarColor || "bg-cyan-500";
+  const html = `
+    <div style="position: relative; width: 28px; height: 28px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+      <div class="${colorClass}" style="
+        position: absolute;
+        inset: 0;
+        border-radius: 50% 50% 50% 0;
+        transform: rotate(-45deg);
+        border: 2px solid white;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5);
+      "></div>
+      <div style="
+        position: relative;
+        z-index: 10;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: white;
+      "></div>
+    </div>
+  `;
+
+  return L.divIcon({
+    html,
+    className: "scada-collab-pin",
+    iconSize: [28, 28],
+    iconAnchor: [14, 28],
+    popupAnchor: [0, -28],
+  });
+}
+
+function createNodeIcon(device: Device) {
+  const isPending = device.status === "pending_approval";
+  const html = `
+    <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;">
+      <span style="position: absolute; width: 32px; height: 32px; border-radius: 50%; background-color: rgba(6, 182, 212, 0.35);" class="${isPending ? 'animate-ping' : 'animate-pulse'}"></span>
+      <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background-color: #020617; border: 2px solid #06B6D4; box-shadow: 0 0 12px rgba(6, 182, 212, 0.9);">
+        <span style="font-size: 11px; line-height: 1;">📷</span>
+      </div>
+    </div>
+  `;
+  return L.divIcon({
+    html,
+    className: "scada-node-pin",
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16],
+  });
+}
+
 function MapViewController({ bounds }: { bounds: L.LatLngBoundsExpression }) {
   const map = useMap();
   useEffect(() => {
     map.fitBounds(bounds, { padding: [40, 40] });
   }, [map, bounds]);
+  return null;
+}
+
+function MapAutoPanner({ targetCoords }: { targetCoords: [number, number] | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (targetCoords) {
+      map.panTo(targetCoords, { animate: true, duration: 1.2 });
+    }
+  }, [map, targetCoords]);
+  return null;
+}
+
+function MapClickHandler({
+  isDropMode,
+  onDropPin,
+}: {
+  isDropMode: boolean;
+  onDropPin: (lat: number, lng: number) => void;
+}) {
+  useMapEvents({
+    click: (e) => {
+      if (isDropMode) {
+        onDropPin(e.latlng.lat, e.latlng.lng);
+      }
+    },
+  });
   return null;
 }
 
@@ -175,18 +257,86 @@ export function TrackMapLeaflet({
     [27.1, 78.05],
   ];
 
+  const collabStore = useCollabStore();
+  const { discoveredDevices, latestDiscoveredNode } = useDeviceStore();
+  const spatialAnnotations = collabStore.annotations.filter((a) => a.type === "SPATIAL" && a.coordinates);
+
+  const [isDropMode, setIsDropMode] = useState(false);
+  const [autoPanTarget, setAutoPanTarget] = useState<[number, number] | null>(null);
+
+  // Auto-pan to newly discovered edge node location
+  useEffect(() => {
+    if (
+      latestDiscoveredNode &&
+      typeof latestDiscoveredNode.latitude === "number" &&
+      typeof latestDiscoveredNode.longitude === "number"
+    ) {
+      setAutoPanTarget([latestDiscoveredNode.latitude, latestDiscoveredNode.longitude]);
+    }
+  }, [latestDiscoveredNode]);
+
+  const activeDeviceNodes = useMemo(() => {
+    const map = new Map<string, Device>();
+    discoveredDevices.forEach((d) => {
+      if (typeof d.latitude === "number" && typeof d.longitude === "number") {
+        map.set(d.deviceId, d);
+      }
+    });
+    return Array.from(map.values());
+  }, [discoveredDevices]);
+
+  const handleDropPin = (lat: number, lng: number) => {
+    const text = window.prompt("Enter annotation text:", "Check this area.");
+    if (text) {
+      collabStore.addAnnotation({
+        id: `ann-sp-${Date.now()}`,
+        type: "SPATIAL",
+        coordinates: [lat, lng],
+        author: {
+          id: "u-me",
+          name: "You",
+          role: "Operator",
+          avatarColor: "bg-cyan-500",
+          status: "online",
+        },
+        text,
+        mentions: [],
+        created_at: Date.now(),
+      });
+    }
+    setIsDropMode(false);
+  };
+
   return (
     <div className={`relative w-full h-[520px] rounded-lg overflow-hidden bg-[#050c1a] ${className || ""}`}>
       {/* Holographic vignette — blends map edges into the glass card */}
-      <div className="leaflet-map-vignette" aria-hidden="true" />
+      <div className="leaflet-map-vignette pointer-events-none z-10" aria-hidden="true" />
+
+      {/* Drop Pin UI Toggle */}
+      <div className="absolute top-4 right-4 z-[400]">
+        <button
+          onClick={() => setIsDropMode(!isDropMode)}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-control font-mono text-xs border transition-all shadow-xl backdrop-blur-md ${
+            isDropMode
+              ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
+              : "bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800"
+          }`}
+        >
+          <span>📍</span>
+          {isDropMode ? "CLICK MAP TO DROP" : "DROP ANNOTATION"}
+        </button>
+      </div>
+
       <MapContainer
         bounds={corridorBounds}
         zoom={9}
         scrollWheelZoom={false}
-        style={{ width: "100%", height: "100%", background: "#050c1a" }}
+        style={{ width: "100%", height: "100%", background: "#050c1a", cursor: isDropMode ? "crosshair" : "grab" }}
         attributionControl={false}
       >
         <MapViewController bounds={corridorBounds} />
+        <MapAutoPanner targetCoords={autoPanTarget} />
+        <MapClickHandler isDropMode={isDropMode} onDropPin={handleDropPin} />
 
         {/* 1. Dark Basemap Tiles (CartoDB Dark Matter) */}
         <TileLayer
@@ -285,16 +435,80 @@ export function TrackMapLeaflet({
                     </span>
                   </div>
                   <div className="text-cyan-400 font-bold uppercase text-[11px]">
-                    {defect.defectClass.replace("_", " ")}
+                    {(defect.defectClass || (defect as any).defect_class || "anomaly").replace(/_/g, " ")}
                   </div>
                   <div className="text-[10px] text-scada-muted mt-0.5">
-                    Chainage: <strong className="text-white">{formatChainage(defect.chainageM)}</strong>
+                    Chainage: <strong className="text-white">{formatChainage(defect.chainageM ?? (defect as any).chainage_m ?? 0)}</strong>
                   </div>
                   <div className="text-[10px] text-emerald-400">
                     Confidence: {formatConfidence(defect.confidence)}
                   </div>
                   <div className="text-[9px] text-scada-accent mt-1 italic">
                     Click marker to inspect AI evidence →
+                  </div>
+                </div>
+              </Tooltip>
+            </Marker>
+          );
+        })}
+
+        {/* 5. Spatial Annotations (War Room) */}
+        {spatialAnnotations.map((ann) => {
+          if (!ann.coordinates) return null;
+          const icon = createAnnotationIcon(ann);
+          return (
+            <Marker key={ann.id} position={ann.coordinates} icon={icon} zIndexOffset={1000}>
+              <Tooltip direction="top" offset={[0, -28]}>
+                <div className="font-mono text-xs p-3 bg-slate-950/90 text-slate-200 rounded-control border border-slate-700 shadow-2xl backdrop-blur-md min-w-[200px]">
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/10">
+                    <div className={`w-4 h-4 rounded-full ${ann.author.avatarColor}`} />
+                    <strong className="text-white">{ann.author.name}</strong>
+                  </div>
+                  <div className="text-[11px] leading-relaxed">"{ann.text}"</div>
+                  <div className="text-[9px] text-slate-500 mt-2 text-right">
+                    {new Date(ann.created_at).toLocaleTimeString()}
+                  </div>
+                </div>
+              </Tooltip>
+            </Marker>
+          );
+        })}
+
+        {/* 6. Active & Auto-Discovered Edge Node Markers (Prompt 29) */}
+        {activeDeviceNodes.map((device) => {
+          const lat = device.latitude!;
+          const lng = device.longitude!;
+          const icon = createNodeIcon(device);
+
+          return (
+            <Marker
+              key={`node-${device.deviceId}`}
+              position={[lat, lng]}
+              icon={icon}
+              zIndexOffset={900}
+            >
+              <Tooltip direction="top" offset={[0, -16]}>
+                <div className="font-mono text-xs p-2.5 bg-slate-950/95 text-white rounded-control border border-cyan-500/50 shadow-2xl backdrop-blur min-w-[200px]">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-1 mb-1.5">
+                    <span className="font-bold text-cyan-300 text-[11px] flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
+                      {device.deviceId}
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                      {device.status.replace("_", " ")}
+                    </span>
+                  </div>
+                  <div className="text-white font-bold text-[11px]">
+                    {device.deviceName}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    Hardware: <strong className="text-slate-200">{device.hardwareVersion}</strong>
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    GPS: <span className="text-cyan-400">{lat.toFixed(4)}° N, {lng.toFixed(4)}° E</span>
+                  </div>
+                  <div className="text-[9px] text-emerald-400 mt-1">
+                    Last Telemetry Ping: Just now (Live)
                   </div>
                 </div>
               </Tooltip>

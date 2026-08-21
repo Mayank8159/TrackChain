@@ -191,16 +191,139 @@ class SecureApiClient {
     }
   }
 
-  // --- Devices & Fleet Ingestion ---
-  public async getDevices() {
-    return this.request<Device[]>("/api/devices");
+  // --- Normalizers (snake_case -> camelCase) ---
+  public normalizeDefect(d: any): DefectEvent {
+    if (!d) return d;
+    return {
+      id: d.id || `def-${Date.now()}`,
+      sessionId: d.session_id || d.sessionId || "ses-default",
+      deviceId: d.device_id || d.deviceId,
+      segmentId: d.segment_id || d.segmentId,
+      defectClass: (d.defect_class || d.defectClass || "unclassified_anomaly") as any,
+      defectFamily: (d.defect_family || d.defectFamily) as any,
+      severity: (d.severity || "medium").toLowerCase() as any,
+      decision: (d.decision || "INSPECT_KNOWN") as any,
+      chainageM: Number(d.chainage_m ?? d.chainageM ?? 0),
+      chainageStartM: d.chainage_start_m ?? d.chainageStartM,
+      chainageEndM: d.chainage_end_m ?? d.chainageEndM,
+      timestamp: d.timestamp || d.created_at || d.createdAt || new Date().toISOString(),
+      coordinates: d.coordinates || (d.latitude && d.longitude ? { lat: d.latitude, lng: d.longitude } : undefined),
+      latitude: d.latitude,
+      longitude: d.longitude,
+      confidence: Number(d.confidence ?? 0.95),
+      sourceModel: d.source_model || d.sourceModel || "ML Fusion",
+      modelVersion: d.model_version || d.modelVersion || "v1.0.0",
+      streamSource: (d.stream_source || d.streamSource || "fused") as any,
+      imageUrl: d.image_url || d.imageUrl || "/evidence/track_flaw_sample.jpg",
+      evidenceImageId: d.evidence_image_id || d.evidenceImageId,
+      videoMediaId: d.video_media_id || d.videoMediaId,
+      videoTimestampSec: Number(d.video_timestamp_sec ?? d.videoTimestampSec ?? 0),
+      videoOffsetSeconds: d.video_offset_seconds ?? d.videoOffsetSeconds,
+      description: d.description || d.notes || "",
+      status: (d.status || "open").toLowerCase() as any,
+      createdAt: d.created_at || d.createdAt || new Date().toISOString(),
+      acknowledgedAt: d.acknowledged_at || d.acknowledgedAt,
+      supportingSignals: d.supporting_signals || d.supportingSignals || [],
+    };
   }
 
-  public async registerDevice(device: Partial<Device>) {
-    return this.request<Device>("/api/devices", {
+  public normalizeSession(s: any): MonitoringSession {
+    if (!s) return s;
+    return {
+      id: s.id,
+      deviceId: s.device_id || s.deviceId,
+      name: s.name || s.id,
+      routeName: s.route_name || s.routeName,
+      lineName: s.line_name || s.lineName,
+      trackId: s.track_id || s.trackId || "TRACK-01",
+      trackSection: s.track_section || s.trackSection || "Mainline Corridor",
+      trackDirection: s.track_direction || s.trackDirection || "both",
+      startTime: s.start_time || s.startTime || new Date().toISOString(),
+      endTime: s.end_time || s.endTime,
+      startChainageM: Number(s.start_chainage_m ?? s.startChainageM ?? 0),
+      endChainageM: Number(s.end_chainage_m ?? s.endChainageM ?? 0),
+      status: (s.status || "completed").toLowerCase() as any,
+      totalDistanceKm: Number(s.total_distance_km ?? s.totalDistanceKm ?? 0),
+      defectsCount: Number(s.defects_count ?? s.defectsCount ?? 0),
+      operatorName: s.operator_name || s.operatorName,
+      weather: s.weather,
+    };
+  }
+
+  public normalizeTelemetry(t: any): TelemetryPoint {
+    if (!t) return t;
+    return {
+      id: t.id || `tel-${Date.now()}`,
+      sessionId: t.session_id || t.sessionId,
+      deviceId: t.device_id || t.deviceId,
+      segmentId: t.segment_id || t.segmentId,
+      timestamp: t.timestamp || new Date().toISOString(),
+      chainageM: Number(t.chainage_m ?? t.chainageM ?? 0),
+      latitude: t.latitude,
+      longitude: t.longitude,
+      speedMps: t.speed_mps ?? t.speedMps,
+      speedKmh: t.speed_kmh ?? t.speedKmh,
+      verticalRms: t.vertical_rms ?? t.verticalRms,
+      lateralRms: t.lateral_rms ?? t.lateralRms,
+      longitudinalRms: t.longitudinal_rms ?? t.longitudinalRms,
+      vibrationRms: Number(t.vibration_rms ?? t.vibrationRms ?? 0),
+      vibrationIndex: t.vibration_index ?? t.vibrationIndex,
+      trackGaugeMm: Number(t.track_gauge_mm ?? t.trackGaugeMm ?? 1676.0),
+      cantMm: Number(t.cant_mm ?? t.cantMm ?? 0),
+      twistMmPerM: Number(t.twist_mm_per_m ?? t.twistMmPerM ?? 0),
+      verticalUnevennessMm: t.vertical_unevenness_mm ?? t.verticalUnevennessMm,
+      alignmentDevMm: t.alignment_dev_mm ?? t.alignmentDevMm,
+      temperatureC: t.temperature_c ?? t.temperatureC,
+      batteryVoltageV: t.battery_voltage_v ?? t.batteryVoltageV,
+    };
+  }
+
+  public normalizeDevice(dev: any): Device {
+    if (!dev) return dev;
+    return {
+      deviceId: dev.device_id || dev.deviceId,
+      deviceName: dev.device_name || dev.deviceName || dev.device_id,
+      hardwareVersion: dev.hardware_version || dev.hardwareVersion || "Raspberry Pi 5",
+      firmwareVersion: dev.firmware_version || dev.firmwareVersion || "v1.0.0",
+      cameraModel: dev.camera_model || dev.cameraModel,
+      imuModel: dev.imu_model || dev.imuModel,
+      gnssModel: dev.gnss_model || dev.gnssModel,
+      status: (dev.status || "online").toLowerCase() as any,
+      batteryVoltageV: dev.battery_voltage_v ?? dev.batteryVoltageV,
+      cpuTempC: dev.cpu_temp_c ?? dev.cpuTempC,
+      lastSeenAt: dev.last_seen_at || dev.lastSeenAt,
+      latitude: dev.latitude,
+      longitude: dev.longitude,
+      isDiscovered: dev.is_discovered ?? dev.isDiscovered,
+      discoveredAt: dev.discovered_at || dev.discoveredAt,
+    };
+  }
+
+  public normalizeDashboardSummary(sum: any): DashboardSummary {
+    if (!sum) return sum;
+    return {
+      totalDefects: Number(sum.total_defects ?? sum.totalDefects ?? 0),
+      criticalDefects: Number(sum.critical_defects ?? sum.criticalDefects ?? 0),
+      distanceCoveredKm: Number(sum.distance_covered_km ?? sum.distanceCoveredKm ?? 0),
+      avgSpeedKmh: Number(sum.avg_speed_kmh ?? sum.avgSpeedKmh ?? 0),
+      openAlerts: Number(sum.open_alerts ?? sum.openAlerts ?? 0),
+      defectCountsByClass: sum.defect_counts_by_class || sum.defectCountsByClass || {},
+      severityDistribution: sum.severity_distribution || sum.severityDistribution || {},
+    };
+  }
+
+  // --- Devices & Fleet Ingestion ---
+  public async getDevices(): Promise<Device[]> {
+    const raw = await this.request<any[]>("/api/devices");
+    return (raw || []).map((d) => this.normalizeDevice(d));
+  }
+
+  public async registerDevice(device: Partial<Device>): Promise<Device> {
+    const raw = await this.request<any>("/api/devices", {
       method: "POST",
       body: JSON.stringify(device),
     });
+    return this.normalizeDevice(raw);
   }
 
   public async registerEdgeNode(payload: NodeRegistrationPayload): Promise<NodeRegistrationResult> {
@@ -211,10 +334,12 @@ class SecureApiClient {
   }
 
   // --- Telemetry Series ---
-  public async getTelemetrySeries(sessionId: string, downsample = 100) {
-    return this.request<TelemetryPoint[]>(
+  public async getTelemetrySeries(sessionId: string, downsample = 100): Promise<TelemetryPoint[]> {
+    const raw = await this.request<any>(
       `/api/telemetry?session_id=${sessionId}&downsample=${downsample}`
     );
+    const list = Array.isArray(raw) ? raw : (raw?.points || []);
+    return list.map((t: any) => this.normalizeTelemetry(t));
   }
 
   public async postTelemetryBatch(payload: TelemetryBatchIngestRequest) {
@@ -230,41 +355,47 @@ class SecureApiClient {
     severity?: string;
     defectClass?: string;
     status?: string;
-  }) {
+  }): Promise<DefectEvent[]> {
     const params = new URLSearchParams();
     if (filters?.sessionId) params.append("session_id", filters.sessionId);
     if (filters?.severity) params.append("severity", filters.severity);
     if (filters?.defectClass) params.append("defect_class", filters.defectClass);
     if (filters?.status) params.append("status", filters.status);
-    return this.request<DefectEvent[]>(`/api/defects?${params.toString()}`);
+    const raw = await this.request<any[]>(`/api/defects?${params.toString()}`);
+    return (raw || []).map((d) => this.normalizeDefect(d));
   }
 
-  public async postDefect(defect: Partial<DefectEvent>) {
-    return this.request<DefectEvent>("/api/defects", {
+  public async postDefect(defect: Partial<DefectEvent>): Promise<DefectEvent> {
+    const raw = await this.request<any>("/api/defects", {
       method: "POST",
       body: JSON.stringify(defect),
     });
+    return this.normalizeDefect(raw);
   }
 
   // --- Inspection Sessions ---
-  public async getSessions() {
-    return this.request<MonitoringSession[]>("/api/sessions");
+  public async getSessions(): Promise<MonitoringSession[]> {
+    const raw = await this.request<any[]>("/api/sessions");
+    return (raw || []).map((s) => this.normalizeSession(s));
   }
 
-  public async getSessionById(id: string) {
-    return this.request<MonitoringSession>(`/api/sessions/${id}`);
+  public async getSessionById(id: string): Promise<MonitoringSession> {
+    const raw = await this.request<any>(`/api/sessions/${id}`);
+    return this.normalizeSession(raw);
   }
 
-  public async createSession(data: Partial<MonitoringSession>) {
-    return this.request<MonitoringSession>("/api/sessions", {
+  public async createSession(data: Partial<MonitoringSession>): Promise<MonitoringSession> {
+    const raw = await this.request<any>("/api/sessions", {
       method: "POST",
       body: JSON.stringify(data),
     });
+    return this.normalizeSession(raw);
   }
 
   // --- Dashboard Analytics ---
-  public async getDashboardSummary() {
-    return this.request<DashboardSummary>("/api/dashboard/summary");
+  public async getDashboardSummary(): Promise<DashboardSummary> {
+    const raw = await this.request<any>("/api/dashboard/summary");
+    return this.normalizeDashboardSummary(raw);
   }
 
   // --- ML Signal Analytics ---

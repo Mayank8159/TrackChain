@@ -22,11 +22,13 @@ import {
   Rewind,
   VideoOff,
   Crosshair,
+  Flag,
 } from "lucide-react";
 import { formatDuration } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import { BoundingBoxOverlay } from "./BoundingBoxOverlay";
 import type { DefectEvent } from "../../lib/types";
+import { useCollabStore } from "../../stores/collab-store";
 
 export interface VideoPlayerHandle {
   seekTo: (seconds: number) => void;
@@ -73,6 +75,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const [isMuted, setIsMuted] = useState<boolean>(true);
     const [hasError, setHasError] = useState<boolean>(false);
     const [isSyntheticMode, setIsSyntheticMode] = useState<boolean>(!src);
+
+    const collabStore = useCollabStore();
+    const temporalAnnotations = collabStore.annotations.filter((a) => a.type === "TEMPORAL" && a.timestamp_sec !== undefined);
 
     // Synthetic playhead timer when no external video stream URL is active
     useEffect(() => {
@@ -222,6 +227,28 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       }
     };
 
+    const handleDropFlag = () => {
+      // In a real app, prompt for text or open side thread
+      const text = window.prompt("Enter flag description:", "Review this frame.");
+      if (text) {
+        collabStore.addAnnotation({
+          id: `ann-tp-${Date.now()}`,
+          type: "TEMPORAL",
+          timestamp_sec: currentTime,
+          author: {
+            id: "u-me",
+            name: "You",
+            role: "Operator",
+            avatarColor: "bg-cyan-500",
+            status: "online",
+          },
+          text,
+          mentions: [],
+          created_at: Date.now(),
+        });
+      }
+    };
+
     // Calculate current frame index for precision HUD
     const currentFrame = Math.floor(currentTime * fps);
 
@@ -316,7 +343,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         {/* Bottom Custom SCADA Controls Bar */}
         <div className="z-20 flex flex-col gap-1.5 p-3 bg-slate-950/90 border-t border-scada-border backdrop-blur">
           {/* Scrubber Timeline Bar */}
-          <div className="relative flex items-center group/scrubber">
+          <div className="relative flex items-center group/scrubber h-4">
             <input
               type="range"
               min="0"
@@ -324,8 +351,24 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
               step="0.1"
               value={currentTime}
               onChange={(e) => seekTo(parseFloat(e.target.value))}
-              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-scada-accent transition-all hover:h-2"
+              className="absolute inset-0 w-full h-1.5 self-center bg-slate-800 rounded-lg appearance-none cursor-pointer accent-scada-accent transition-all z-10 hover:h-2"
             />
+            {/* Render Temporal Annotations */}
+            {temporalAnnotations.map((ann) => {
+              if (ann.timestamp_sec === undefined || !duration) return null;
+              const pct = (ann.timestamp_sec / duration) * 100;
+              return (
+                <div
+                  key={ann.id}
+                  className="absolute top-0 z-20 cursor-pointer group/flag -ml-1.5"
+                  style={{ left: `${pct}%` }}
+                  onClick={() => seekTo(ann.timestamp_sec!)}
+                  title={`${ann.author.name}: ${ann.text}`}
+                >
+                  <div className={`w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[8px] ${ann.author.avatarColor.replace('bg-', 'border-b-')} shadow-lg drop-shadow-md transition-transform transform group-hover/flag:scale-150`} />
+                </div>
+              );
+            })}
           </div>
 
           {/* Controls Cluster */}
@@ -366,6 +409,16 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Drop Flag */}
+              <button
+                onClick={handleDropFlag}
+                className="flex items-center gap-1 px-2 py-1 mr-1 rounded bg-slate-800 text-slate-300 hover:bg-scada-accent/20 hover:text-scada-accent transition text-[10px] font-bold border border-transparent hover:border-scada-accent/50"
+                title="Drop Temporal Flag"
+              >
+                <Flag size={12} />
+                <span className="hidden sm:inline">FLAG</span>
+              </button>
+
               {/* Speed multiplier toggle */}
               <button
                 onClick={cyclePlaybackRate}

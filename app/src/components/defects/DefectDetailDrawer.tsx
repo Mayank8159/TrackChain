@@ -43,7 +43,7 @@ export function DefectDetailDrawer({
 
       <div className="flex items-center gap-2">
         <SeverityBadge severity={defect.severity} />
-        <span className="badge-cyan">{defect.streamSource.toUpperCase()} STREAM</span>
+        <span className="badge-cyan">{(defect.streamSource || (defect as any).stream_source || "fused").toUpperCase()} STREAM</span>
       </div>
 
       {/* Snapshot Preview */}
@@ -51,10 +51,10 @@ export function DefectDetailDrawer({
         <div className="flex flex-col items-center gap-1 text-center p-3">
           <span className="h-3 w-3 rounded-full bg-scada-red animate-ping" />
           <p className="font-bold text-scada-text uppercase text-xs">
-            {defect.defectClass.replace("_", " ")}
+            {(defect.defectClass || (defect as any).defect_class || "anomaly").replace(/_/g, " ")}
           </p>
           <p className="text-[10px] text-scada-muted">
-            Loc: {formatChainage(defect.chainageM)}
+            Loc: {formatChainage(defect.chainageM ?? (defect as any).chainage_m ?? 0)}
           </p>
         </div>
       </div>
@@ -64,7 +64,7 @@ export function DefectDetailDrawer({
         <div className="flex justify-between">
           <span className="text-scada-muted">Classification:</span>
           <span className="font-bold text-scada-text uppercase">
-            {defect.defectClass.replace("_", " ")}
+            {(defect.defectClass || (defect as any).defect_class || "anomaly").replace(/_/g, " ")}
           </span>
         </div>
         <div className="flex justify-between">

@@ -11,6 +11,9 @@ import { useModeStore } from "../../stores/mode-store";
 import { ModeToggle } from "../ui/ModeToggle";
 import { api } from "../../lib/api";
 import { cn } from "../../lib/utils";
+import { useCollabStore } from "../../stores/collab-store";
+import { useToast } from "../ui/Toast";
+import { useRouter } from "next/navigation";
 
 function TickingISTClock() {
   const [timeStr, setTimeStr] = useState<string>("");
@@ -74,10 +77,10 @@ function ConnectionStatusLED() {
   const getStatusConfig = () => {
     if (mode === "DEMO") {
       return {
-        dot: "bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.6)]",
+        dot: "bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.6)] animate-pulse",
         text: "text-cyan-300",
-        label: "DEMO MODE",
-        subtitle: "Scripted Stream",
+        label: "DIGITAL TWIN",
+        subtitle: "Physics Simulation",
       };
     }
 
@@ -130,6 +133,33 @@ function ConnectionStatusLED() {
 export function Header() {
   const { toggleMobileNav, reduceTransparency, toggleReduceTransparency } = useUIStore();
   const { alerts } = useAlerts();
+  const collabStore = useCollabStore();
+  const { showToast } = useToast();
+  const router = useRouter();
+
+  // Track previous annotations length to detect new ones
+  const [prevAnnsLength, setPrevAnnsLength] = useState(0);
+
+  useEffect(() => {
+    if (collabStore.annotations.length > prevAnnsLength) {
+      const newAnn = collabStore.annotations[collabStore.annotations.length - 1];
+      if (newAnn && newAnn.author.id !== "u-me") {
+        let title = "";
+        let desc = newAnn.text;
+        
+        if (newAnn.type === "SPATIAL") title = "New Map Pin";
+        else if (newAnn.type === "TEMPORAL") title = "New Video Flag";
+        else title = "New Message";
+
+        showToast({
+          type: "info",
+          title: `${newAnn.author.name}: ${title}`,
+          description: desc,
+        });
+      }
+      setPrevAnnsLength(collabStore.annotations.length);
+    }
+  }, [collabStore.annotations, prevAnnsLength, showToast]);
 
   const unacknowledgedCount = alerts.filter(
     (a) => !a.acknowledged && (a.severity === "critical" || a.severity === "high")
@@ -222,6 +252,27 @@ export function Header() {
           <Contrast size={12} strokeWidth={1.5} />
           <span className="hidden lg:inline">{reduceTransparency ? "SOLID" : "GLASS"}</span>
         </button>
+
+        {/* Global Presence Avatar Stack */}
+        {collabStore.presence.length > 0 && (
+          <div className="hidden lg:flex items-center pl-2 border-l border-white/[0.06]">
+            {collabStore.presence.slice(0, 3).map((user, i) => (
+              <div
+                key={user.id}
+                className={`relative -ml-2 flex h-7 w-7 items-center justify-center rounded-full border border-slate-950 text-[10px] font-bold text-white shadow-md ${user.avatarColor}`}
+                style={{ zIndex: 10 - i }}
+                title={`${user.name} (${user.role})`}
+              >
+                {user.name.charAt(0)}
+              </div>
+            ))}
+            {collabStore.presence.length > 3 && (
+              <div className="relative -ml-2 flex h-7 w-7 items-center justify-center rounded-full border border-slate-950 bg-slate-800 text-[10px] font-bold text-slate-300 shadow-md">
+                +{collabStore.presence.length - 3}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* User Badge / Operator */}
         <div

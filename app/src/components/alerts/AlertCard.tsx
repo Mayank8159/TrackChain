@@ -76,10 +76,10 @@ export function AlertCard({
         <div className="flex items-center gap-3">
           <SeverityBadge severity={alert.severity} size="sm" />
           <h3 className="font-mono font-bold text-white text-sm uppercase tracking-wide">
-            {alert.defectClass.replace("_", " ")}
+            {(alert.defectClass || (alert as any).defect_class || "anomaly").replace(/_/g, " ")}
           </h3>
           <span className="text-xs font-mono font-bold text-cyan-400">
-            {formatChainage(alert.chainageM)}
+            {formatChainage(alert.chainageM ?? (alert as any).chainage_m ?? 0)}
           </span>
         </div>
 

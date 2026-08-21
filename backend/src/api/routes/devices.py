@@ -177,18 +177,39 @@ def device_heartbeat(
     payload: DeviceHeartbeat,
     db: Session = Depends(get_db_session),
 ):
-    """Receive periodic telemetry heartbeat from edge Raspberry Pi."""
-    device = db.query(Device).filter(Device.device_id == device_id).first()
-    if not device:
-        raise HTTPException(status_code=404, detail="Device not registered")
+    """Receive periodic telemetry heartbeat from edge Raspberry Pi with auto-discovery."""
+    from src.services.alerts import dispatch_device_discovered
 
-    device.battery_voltage_v = payload.battery_voltage_v
-    device.cpu_temp_c = payload.cpu_temp_c
-    device.status = payload.status
-    device.last_seen_at = payload.last_seen_at
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    is_new = False
+    if not device:
+        is_new = True
+        device = Device(
+            device_id=device_id,
+            device_name=f"Edge Node {device_id}",
+            hardware_version="Raspberry Pi 5 (Auto-Discovered)",
+            firmware_version="v1.0.0",
+            camera_model="Sony IMX477",
+            status=payload.status or "pending_approval",
+            battery_voltage_v=payload.battery_voltage_v,
+            cpu_temp_c=payload.cpu_temp_c,
+            last_seen_at=payload.last_seen_at or datetime.now(timezone.utc),
+        )
+        db.add(device)
+    else:
+        device.battery_voltage_v = payload.battery_voltage_v
+        device.cpu_temp_c = payload.cpu_temp_c
+        device.status = payload.status
+        device.last_seen_at = payload.last_seen_at
+
     db.commit()
     db.refresh(device)
+
+    if is_new:
+        dispatch_device_discovered(device)
+
     return device
+
 
 
 @router.get("", response_model=List[DeviceResponse])

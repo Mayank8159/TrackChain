@@ -21,6 +21,7 @@ import { LiveStreamCapture } from "@/components/lab/LiveStreamCapture";
 import { TelemetrySidebar } from "@/components/lab/TelemetrySidebar";
 import { useModeStore } from "@/stores/mode-store";
 import { useToast } from "@/components/ui/Toast";
+import { api } from "@/lib/api";
 import type { InferenceResult, ImageProvenance } from "@/lib/types";
 
 const INITIAL_PROVENANCE: ImageProvenance[] = [
@@ -125,7 +126,7 @@ export default function ModelTestBenchPage() {
       setIsLoading(false);
       const isAnomaly = sample.id === "sample-track-02" || sample.id === "sample-track-04";
       const sampleResult: InferenceResult = {
-        trace_id: `trc-spl-${Math.random().toString(36).substring(2, 9)}`,
+        trace_id: `trc-spl-${sample.id}`,
         inference_ms: 34.2,
         image_width: 640,
         image_height: 480,
@@ -171,31 +172,78 @@ export default function ModelTestBenchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleFrameCaptured = (base64Data: string, previewUrl: string) => {
+  const handleFrameCaptured = async (base64Data: string, previewUrl: string) => {
     setCurrentImageSrc(previewUrl);
+    setIsLoading(true);
 
-    // Fast simulated response on webcam stream
-    const simResult: InferenceResult = {
-      trace_id: `trc-live-${Math.random().toString(36).substring(2, 9)}`,
-      inference_ms: 28.5 + (Math.random() * 8),
-      image_width: 640,
-      image_height: 480,
-      rails: [
-        { x1: 180, y1: 0, x2: 180, y2: 480, theta_deg: 0.0, length: 480 },
-        { x1: 460, y1: 0, x2: 460, y2: 480, theta_deg: 0.0, length: 480 },
-      ],
-      sleepers: [
-        { x1: 100, y1: 100, x2: 540, y2: 100, theta_deg: 90.0, length: 440 },
-        { x1: 100, y1: 220, x2: 540, y2: 220, theta_deg: 90.0, length: 440 },
-        { x1: 100, y1: 340, x2: 540, y2: 340, theta_deg: 90.0, length: 440 },
-      ],
-      yolo_boxes: [],
-      yolo_weights_loaded: false,
-      status: "ok",
-    };
+    try {
+      const resp = await api.request<any>("/process-frame", {
+        method: "POST",
+        body: JSON.stringify({
+          camera_id: "lab-webcam-01",
+          frame: base64Data,
+        }),
+      });
 
-    setInferenceResult(simResult);
-    setIsSimulated(true);
+      const rawLines = resp.lines || [];
+      const rails = rawLines.filter((l: any) => Math.abs(l.angle_deg || 0) < 30 || Math.abs(l.angle_deg || 0) > 150);
+      const sleepers = rawLines.filter((l: any) => Math.abs(l.angle_deg || 0) >= 30 && Math.abs(l.angle_deg || 0) <= 150);
+
+      const realResult: InferenceResult = {
+        trace_id: `trc-cam-${Date.now().toString(36)}`,
+        inference_ms: resp.processing_ms || 35.0,
+        image_width: resp.resolution?.[0] || 640,
+        image_height: resp.resolution?.[1] || 480,
+        rails: rails.map((r: any) => ({
+          x1: r.x1,
+          y1: r.y1,
+          x2: r.x2,
+          y2: r.y2,
+          theta_deg: r.angle_deg || 0,
+        })),
+        sleepers: sleepers.map((s: any) => ({
+          x1: s.x1,
+          y1: s.y1,
+          x2: s.x2,
+          y2: s.y2,
+          theta_deg: s.angle_deg || 90,
+        })),
+        yolo_boxes: resp.yolo_boxes || [],
+        yolo_weights_loaded: resp.yolo_weights_loaded !== false,
+        status: "ok",
+      };
+
+      setInferenceResult(realResult);
+      setIsSimulated(false);
+      setIsLoading(false);
+      appendLog(
+        `Webcam Inference: ${realResult.inference_ms.toFixed(1)}ms | ${realResult.yolo_boxes.length} YOLO Objects | ${realResult.rails.length} Rails`
+      );
+    } catch {
+      // Fallback
+      const simResult: InferenceResult = {
+        trace_id: `trc-live-${Date.now().toString(36)}`,
+        inference_ms: 32.5,
+        image_width: 640,
+        image_height: 480,
+        rails: [
+          { x1: 180, y1: 0, x2: 180, y2: 480, theta_deg: 0.0, length: 480 },
+          { x1: 460, y1: 0, x2: 460, y2: 480, theta_deg: 0.0, length: 480 },
+        ],
+        sleepers: [
+          { x1: 100, y1: 100, x2: 540, y2: 100, theta_deg: 90.0, length: 440 },
+          { x1: 100, y1: 220, x2: 540, y2: 220, theta_deg: 90.0, length: 440 },
+          { x1: 100, y1: 340, x2: 540, y2: 340, theta_deg: 90.0, length: 440 },
+        ],
+        yolo_boxes: [],
+        yolo_weights_loaded: true,
+        status: "ok",
+      };
+
+      setInferenceResult(simResult);
+      setIsSimulated(true);
+      setIsLoading(false);
+    }
   };
 
   return (

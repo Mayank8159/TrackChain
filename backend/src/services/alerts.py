@@ -82,3 +82,44 @@ def dispatch_defect_alert(defect: Any):
 
         return True
     return False
+
+
+def dispatch_device_discovered(device: Any, lat: Optional[float] = None, lon: Optional[float] = None):
+    """Dispatch instant SSE event when a new edge node is auto-discovered on the network."""
+    dev_id = getattr(device, "device_id", "unknown")
+    dev_name = getattr(device, "device_name", f"Edge Node {dev_id}")
+    hw = getattr(device, "hardware_version", "Raspberry Pi 5")
+    fw = getattr(device, "firmware_version", "v1.0.0")
+    cam = getattr(device, "camera_model", "Sony IMX477 (Auto-Discovered)")
+    dev_status = getattr(device, "status", "pending_approval")
+
+    logger.info(f"[AUTO-DISCOVERY] New Edge Node Materialized: [{dev_id}] - {dev_name} (Lat: {lat}, Lon: {lon})")
+
+    payload = {
+        "device_id": str(dev_id),
+        "deviceId": str(dev_id),
+        "device_name": str(dev_name),
+        "deviceName": str(dev_name),
+        "hardware_version": str(hw),
+        "hardwareVersion": str(hw),
+        "firmware_version": str(fw),
+        "firmwareVersion": str(fw),
+        "camera_model": cam,
+        "cameraModel": cam,
+        "status": str(dev_status),
+        "latitude": lat,
+        "longitude": lon,
+        "is_discovered": True,
+        "isDiscovered": True,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(broadcast_event("device_discovered", payload))
+    except Exception as exc:
+        logger.warning(f"Could not dispatch device_discovered event: {exc}")
+
+    return payload
+

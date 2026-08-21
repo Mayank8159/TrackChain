@@ -21,6 +21,7 @@ import {
   Gauge,
   FlaskConical,
   BrainCircuit,
+  Box,
 } from "lucide-react";
 import { useUIStore } from "../../stores/ui-store";
 import { cn } from "../../lib/utils";
@@ -34,6 +35,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Control Room", tag: "LIVE", icon: LayoutDashboard },
+  { href: "/digital-twin", label: "3D Digital Twin", tag: "3D", icon: Box },
   { href: "/forecast", label: "Oracle Forecast", tag: "AI", icon: BrainCircuit },
   { href: "/sessions", label: "Inspection Runs", tag: "RUNS", icon: RouteIcon },
   { href: "/defects", label: "Defect Registry", tag: "LOG", icon: AlertTriangle },

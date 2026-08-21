@@ -60,10 +60,10 @@ export function DefectTable({
                   </div>
                 </TableCell>
                 <TableCell className="font-semibold text-scada-cyan">
-                  {formatChainage(d.chainageM)}
+                  {formatChainage(d.chainageM ?? (d as any).chainage_m ?? 0)}
                 </TableCell>
                 <TableCell className="uppercase font-semibold">
-                  {d.defectClass.replace("_", " ")}
+                  {(d.defectClass || (d as any).defect_class || "anomaly").replace(/_/g, " ")}
                 </TableCell>
                 <TableCell>
                   <SeverityBadge severity={d.severity} />

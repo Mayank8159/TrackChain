@@ -55,10 +55,10 @@ export function RecentDefects() {
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono font-bold text-white uppercase truncate">
-                      {defect.defectClass.replace("_", " ")}
+                      {(defect.defectClass || (defect as any).defect_class || "anomaly").replace(/_/g, " ")}
                     </span>
                     <span className="text-[11px] font-mono text-cyan-400">
-                      {formatChainage(defect.chainageM)}
+                      {formatChainage(defect.chainageM ?? (defect as any).chainage_m ?? 0)}
                     </span>
                   </div>
                   <p className="text-[10px] font-mono text-scada-muted truncate mt-0.5">

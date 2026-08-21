@@ -136,6 +136,20 @@ export function TelemetryChart({
   const activeColor = color || cfg.color;
   const activeThreshold = safetyThreshold !== undefined ? safetyThreshold : cfg.threshold;
 
+  // Protect Recharts SVG DOM against 10k point overload by downsampling to max 500 visual points
+  const displayData = React.useMemo(() => {
+    if (!data || data.length <= 500) return data || [];
+    const step = Math.ceil(data.length / 500);
+    const sampled: TelemetryPoint[] = [];
+    for (let i = 0; i < data.length; i += step) {
+      sampled.push(data[i]);
+    }
+    if (data.length > 0 && sampled[sampled.length - 1] !== data[data.length - 1]) {
+      sampled.push(data[data.length - 1]);
+    }
+    return sampled;
+  }, [data]);
+
   const handleChartClick = (e: any) => {
     if (e && e.activePayload && e.activePayload.length > 0) {
       const pt = e.activePayload[0].payload as TelemetryPoint;
@@ -173,7 +187,7 @@ export function TelemetryChart({
         <div className="rounded-lg border border-scada-border bg-slate-950 p-2 relative">
           <ResponsiveContainer width="100%" height={height}>
             <LineChart
-              data={data}
+              data={displayData}
               margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
               onClick={handleChartClick}
             >

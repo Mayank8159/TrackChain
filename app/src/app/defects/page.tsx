@@ -353,8 +353,32 @@ function DefectRegistryContent() {
                 <TableBody>
                   {filteredDefects.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="py-12 text-center text-scada-muted">
-                        No defects matching the selected criteria.
+                      <TableCell colSpan={9} className="py-16 text-center">
+                        <div className="flex flex-col items-center justify-center gap-3 font-mono">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                            <CheckCircle2 className="h-6 w-6" />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-bold text-white uppercase tracking-wider">
+                              No Defects Match Active Filter
+                            </span>
+                            <span className="text-xs text-slate-400 max-w-sm mx-auto">
+                              All track geometry parameters and visual components are within RDSO tolerance for the chosen criteria.
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSeverityFilter("all");
+                              setClassFilter("all");
+                              setSourceFilter("all");
+                              setSearchQuery("");
+                              router.replace("/defects", { scroll: false });
+                            }}
+                            className="mt-2 px-3 py-1.5 text-xs font-mono font-bold text-cyan-300 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 rounded transition shadow-lg"
+                          >
+                            Reset All Filters
+                          </button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -390,12 +414,12 @@ function DefectRegistryContent() {
 
                           {/* Chainage */}
                           <TableCell className="font-mono font-semibold text-cyan-400">
-                            {formatChainage(defect.chainageM)}
+                            {formatChainage(defect.chainageM ?? (defect as any).chainage_m ?? 0)}
                           </TableCell>
 
                           {/* Defect Class */}
                           <TableCell className="uppercase font-mono text-scada-text font-bold">
-                            {defect.defectClass.replace("_", " ")}
+                            {(defect.defectClass || (defect as any).defect_class || "anomaly").replace(/_/g, " ")}
                           </TableCell>
 
                           {/* Severity */}

@@ -296,11 +296,11 @@ function SessionInspectionHeroContent() {
                     <div className="flex items-center gap-2">
                       <SeverityBadge severity={d.severity} size="sm" />
                       <span className="text-xs font-mono font-bold text-white uppercase">
-                        {d.defectClass.replace("_", " ")}
+                        {(d.defectClass || (d as any).defect_class || "anomaly").replace(/_/g, " ")}
                       </span>
                     </div>
                     <span className="text-[11px] font-mono text-cyan-400 font-bold">
-                      {formatChainage(d.chainageM)}
+                      {formatChainage(d.chainageM ?? (d as any).chainage_m ?? 0)}
                     </span>
                   </div>
 

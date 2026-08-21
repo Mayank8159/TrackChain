@@ -274,10 +274,10 @@ export function RouteLineDiagram({
             <div className="flex items-center gap-3">
               <SeverityBadge severity={hoveredDefect.severity} size="sm" />
               <span className="font-bold text-white uppercase">
-                {hoveredDefect.defectClass.replace("_", " ")}
+                {(hoveredDefect.defectClass || (hoveredDefect as any).defect_class || "anomaly").replace(/_/g, " ")}
               </span>
               <span className="text-scada-muted">
-                Chainage: <strong className="text-cyan-400">{formatChainage(hoveredDefect.chainageM)}</strong>
+                Chainage: <strong className="text-cyan-400">{formatChainage(hoveredDefect.chainageM ?? (hoveredDefect as any).chainage_m ?? 0)}</strong>
               </span>
               <span className="text-scada-muted">
                 Confidence: <strong className="text-emerald-400">{(hoveredDefect.confidence * 100).toFixed(1)}%</strong>

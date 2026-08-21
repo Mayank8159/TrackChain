@@ -1,76 +1,141 @@
-# TrackChain System Architecture Specification (tc.v1)
+# TrackChain Master System Architecture Specification
 
-```text
-ML Inference Layer (Edge RPi 5)  ──►  Backend API & TimescaleDB  ──►  Frontend Dashboard (Next.js 14)
+> **Autonomous Railway Track Anomaly Intelligence, Predictive Maintenance & 3D Digital Twin Platform**  
+> *Compliant with RDSO Comprehensive Track Inspection (CTI) & EN 13848-1 Track Geometry Standards*
+
+---
+
+## 1. End-to-End System Topology
+
+The TrackChain platform is a distributed, edge-to-cloud cyber-physical system designed for real-time railway inspection, automated geometry classification, predictive degradation forecasting, and multi-user incident response.
+
+```mermaid
+flowchart TB
+    %% ========================================================================
+    %% 1. EDGE SENSING & INFERENCE LAYER
+    %% ========================================================================
+    subgraph EDGE["1. Edge Inspection Vehicle & Sensor Layer (RPi 5 & Jetson Orin)"]
+        direction TB
+        CAM["4K Global-Shutter Optical Camera\n(Sony IMX477 @ 60 FPS)"]
+        IMU["6-DOF Inertial Measurement Unit\n(ICM-42688-P @ 100 Hz)"]
+        GNSS["Dual-Antenna RTK GNSS Receiver\n(u-blox ZED-F9P ±0.05m Fix)"]
+        
+        subgraph EDGE_ML["Edge AI Perception Engine"]
+            HOUGH["OpenCV Hough Transform\n(Rail & Sleeper Geometry)"]
+            YOLO["YOLOv8-Rail Inference\n(Fasteners, Cracks, Squats)"]
+            PATCH["PatchCore & Sequence-VAE\n(Unsupervised Visual & Spatial Novelty)"]
+            PHYS["EN 13848-1 Physics Calculator\n(Twist, Gauge Widening, Cant)"]
+        end
+        
+        BUFFER["Offline Circular SQLite WAL Buffer\n(Zero Data Loss in Tunnels)"]
+        
+        CAM --> HOUGH
+        CAM --> YOLO
+        CAM --> PATCH
+        IMU --> PHYS
+        GNSS --> PHYS
+        
+        HOUGH --> BUFFER
+        YOLO --> BUFFER
+        PATCH --> BUFFER
+        PHYS --> BUFFER
+    end
+
+    %% ========================================================================
+    %% 2. SECURE TRANSPORT LAYER
+    %% ========================================================================
+    subgraph TRANSPORT["2. Resilient Transport Layer (Zero-Trust Backhaul)"]
+        direction TB
+        TLS["Mutual TLS 1.3 / HTTPS Gateway\n(HMAC-SHA256 Request Signing)"]
+        BUFFER -. "Telemetry Batch Ingest (100Hz)\n[X-Signature, X-Device-ID]" .-> TLS
+        BUFFER -. "Defect Event Alert (Real-time)\n[Idempotency Key]" .-> TLS
+        BUFFER -. "Multipart Media Chunk Upload" .-> TLS
+    end
+
+    %% ========================================================================
+    %% 3. BACKEND CORE & PERSISTENCE
+    %% ========================================================================
+    subgraph BACKEND["3. Backend Core Platform (FastAPI & TimescaleDB Cloud)"]
+        direction TB
+        ROUTER["FastAPI Asynchronous Gateway\n(/api/telemetry, /api/defects, /api/alerts)"]
+        ORCH["Fusion & Decision Engine\n(Multi-Modal Persistence Rules)"]
+        
+        subgraph STORAGE["Multi-Model Storage Tier"]
+            TIMESCALE["TimescaleDB (PostgreSQL 14)\n(Hypertables: Telemetry, ML Signals)"]
+            POSTGIS["PostGIS Spatial Extension\n(Indexed Linear Chainage Coordinates)"]
+            MINIO["AWS S3 / MinIO Object Storage\n(HLS Video Segments & Raw Frames)"]
+            REDIS["Redis In-Memory Bus\n(SSE Broadcast & Rate Limiter)"]
+        end
+        
+        TLS --> ROUTER
+        ROUTER --> ORCH
+        ORCH --> TIMESCALE
+        ORCH --> POSTGIS
+        ROUTER --> MINIO
+        ORCH --> REDIS
+    end
+
+    %% ========================================================================
+    %% 4. MISSION CONTROL FRONTEND
+    %% ========================================================================
+    subgraph FRONTEND["4. Holographic SCADA Mission Control (Next.js 14 & R3F)"]
+        direction TB
+        
+        subgraph MODULES["Operational Workspaces"]
+            SCADA["/ (Mission Control Room)\nLive Corridor KPI & Speed Restrictions"]
+            TWIN["/digital-twin (3D Digital Twin)\nProcedural Rails & Instanced Sleepers (R3F)"]
+            ORACLE["/forecast (Predictive Oracle)\nConformal Degradation & TQI Recovery Curve"]
+            WARROOM["/warroom/[id] (Incident War Room)\nSpatial Pinning, Flags & Voice Briefings"]
+            MAP_VIEW["/map (GIS Corridor Map)\nLeaflet CartoDB TQI Polylines"]
+            BENCH["/lab (Model Test Bench)\nReal-time Inference & Hough Overlays"]
+            PERF["/performance (SRE Observatory)\n5-Stage Latency & Reliability Grade"]
+            DEVICES_VIEW["/devices (Edge Fleet Manager)\nNode Onboarding & Hardware Provisioning"]
+        end
+
+        ROUTER -- "REST API Contracts (tc.v1)" --> FRONTEND
+        REDIS -- "SSE Live Alert Stream (/api/alerts/stream)" --> SCADA
+        MINIO -- "HLS Video Stream (.m3u8)" --> TWIN
+    end
+
+    %% Styling
+    classDef edgeStyle fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef transStyle fill:#020617,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+    classDef backStyle fill:#090d16,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+    classDef frontStyle fill:#050c1a,stroke:#06b6d4,stroke-width:2px,color:#f8fafc;
+    
+    class EDGE edgeStyle;
+    class TRANSPORT transStyle;
+    class BACKEND backStyle;
+    class FRONTEND frontStyle;
 ```
 
 ---
 
-## 1. System Overview
+## 2. Layer Specifications & Protocols
 
-TrackChain is a hybrid edge-cloud railway track intelligence platform combining high-speed optical computer vision, inertial measurement unit (IMU) dynamics, GNSS spatial tracking, and EN 13848-1 / RDSO track geometry analytics.
+### 2.1 Edge Layer (Inspection Bogies & Revenue Locomotives)
+- **Hardware Architecture**: Dual-compute setup pairing a Raspberry Pi 5 (telemetry aggregation, EN 13848-1 geometry math, GNSS sync) with an NVIDIA Jetson Orin Nano (4K vision inference).
+- **Sampling Rates**:
+  - IMU (Vibration, Roll, Pitch): **100 Hz** (uniform 0.25m spatial binning)
+  - Vision (Optical Rails & Fasteners): **60 FPS** at 1080p / 15 FPS at 4K
+  - GNSS (Centimetric Waypoint Sync): **10 Hz** RTK fix
+- **Zero Data Loss Guarantee**: Local SQLite circular Write-Ahead Log (WAL) buffers up to 72 hours of inspection data during tunnel traversals or cellular dead zones, automatically resuming sync upon reconnection.
 
-The **canonical contract (`tc.v1`)** is enforced across all repository layers:
-- `packages/shared/src/types.ts` (TypeScript DTOs)
-- `backend/src/schemas/` (Pydantic models)
-- `backend/src/db/models.py` (SQLAlchemy ORM tables & TimescaleDB hypertables)
-- `ml/core/schema.py` (ML dataclasses & enums)
+### 2.2 Transport & Security Layer
+- **Zero-Trust Network Architecture**: Every request is authenticated via device-specific API keys or 60-minute scoped JWT tokens (`POST /api/v1/devices/token`).
+- **Cryptographic Integrity**: Payloads are timestamped and signed with HMAC-SHA256 headers (`X-Signature`, `X-Timestamp`, `X-Device-ID`) to prevent replay attacks and tampering.
+- **Data Source State Machine**: Frontend enforces explicit data source states (`DEMO ↔ REAL`) with visual HUD watermarks and strictly prohibits silent mock fallbacks during production telemetry ingestion.
 
----
+### 2.3 Backend Core Platform
+- **Framework**: FastAPI with asynchronous endpoints and Pydantic v2 contract enforcement (`tc.v1`).
+- **Database Partitioning**:
+  - **TimescaleDB**: Hypertables partitioned into 1-day chunks for high-throughput sensor telemetry (`telemetry_samples`) and model detections (`ml_signals`).
+  - **PostGIS**: Spatial indexes (`idx_defect_events_lat_lon`, `idx_telemetry_lat_lon`) for bounding radius queries and track polyline generation.
+  - **AWS S3 / MinIO**: Object storage for optical evidence clips and adaptive bitrate HLS ladders (`1080p`, `720p`, `480p`, `360p`).
+  - **Redis Bus**: In-memory token bucket rate limiting (60 req/min/device) and Server-Sent Events (SSE) broadcasting.
 
-## 2. The 5 Pillars of Edge-to-Cloud Integration
-
-### Pillar 1: Contract & Schema Synchronization (`tc.v1`)
-- The ML layer and Backend API speak the exact same language.
-- `CalibratedSignal` generated by the ML pipeline serializes losslessly to JSON and matches backend Pydantic models with 100% field parity.
-
-### Pillar 2: Calibration & Unified Thresholding
-- All 5 ML models map output probabilities onto a normalized $[0.0, 1.0]$ scale where $0.50$ universally indicates that the action limit has been crossed (`fired=True`).
-- Calibration methods:
-  - YOLOv8n & Bi-LSTM: Temperature Scaling ($T$)
-  - PatchCore & Seq-VAE: Sigmoid Extreme Value Theory ($P_{99}$)
-  - EN 13848 Physics: Normalized Exceedance Ratio ($\text{Measured} / (2 \times \text{Limit})$)
-
-### Pillar 3: Resumable Media & Evidence Sync (S3)
-- Edge devices upload heavy video segments and high-res evidence images directly to AWS S3 / MinIO via presigned multipart URLs.
-- The Backend never buffers large video binaries, maintaining ultra-low CPU footprint and horizontal scalability.
-- Background transcoding generates an HLS adaptive bitrate ladder (`1080p`, `720p`, `480p`, `360p`) with master `.m3u8` playlists for variable network conditions.
-
-### Pillar 4: Spatial & Temporal Binning (Chainage)
-- Railway maintenance operates strictly by physical distance along the track centerline (Chainage).
-- `ml/core/chainage.py` resamples multi-rate sensors ($100\text{ Hz}$ IMU, $15\text{ FPS}$ Camera, $5\text{ Hz}$ GNSS) into uniform $0.25\text{ m}$ spatial bins.
-- Coincident visual and geometry anomalies are matched to identical chainage coordinates and fused into single, high-confidence defect records.
-
-### Pillar 5: Security, Device Auth & Webhooks
-- Edge devices register and obtain an API key (`POST /api/v1/devices/register`), exchange it for a 60-minute JWT access token (`POST /api/v1/devices/token`), and sign batch requests with HMAC-SHA256 (`X-Signature`, `X-Timestamp`).
-- High-severity defects automatically dispatch HMAC-SHA256 signed webhooks to external Indian Railways systems (RDSO, UDM, TMS).
-
----
-
-## 3. Storage Architecture: Database vs. S3
-
-```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                          Storage Partition                             │
-├────────────────────────────────────────┬───────────────────────────────┤
-│ PostgreSQL / TimescaleDB Hypertables   │ AWS S3 / MinIO Object Storage │
-├────────────────────────────────────────┼───────────────────────────────┤
-│ - devices                              │ - video_segment (.mp4)        │
-│ - sessions                             │ - evidence_image (.jpg)       │
-│ - telemetry_samples (Hypertable)       │ - hls_streams/ (.m3u8, .ts)   │
-│ - ml_signals (Hypertable)              │ - thumbnail (.webp)           │
-│ - defect_events (PostGIS spatial)      │ - report_export (.parquet)    │
-│ - audit_logs (Immutable audit trail)   │                               │
-│ - idempotency_records                  │                               │
-│ - alert_events                         │                               │
-└────────────────────────────────────────┴───────────────────────────────┘
-```
-
----
-
-## 4. Observability & Reliability Architecture
-
-- **Prometheus Metrics (`GET /metrics`)**: Exposes request throughput, response duration histograms, defect creation counters, telemetry ingestion rates, and ML inference timing.
-- **Request Tracing Middleware**: Attaches and propagates `X-Request-ID` across contextual logs and response headers.
-- **Circuit Breakers**: Triple-state machine (`CLOSED`, `OPEN`, `HALF_OPEN`) wrapping external Redis, S3, and Webhooks dependencies, failing fast with HTTP 503 and `Retry-After` headers during downstream service degradation.
-- **Immutable Audit Logging**: Captures who did what, when, and with what parameters for regulatory railway safety compliance.
+### 2.4 Holographic SCADA Mission Control
+- **Framework**: Next.js 14 (App Router) with React 18 and Tailwind CSS design tokens.
+- **3D Digital Twin Engine**: React Three Fiber (R3F) and Three.js procedurally generating track geometry from raw EN 13848 telemetry, using `<instancedMesh>` to render 1,000+ sleepers in 1 draw call at 60 FPS.
+- **Bi-Directional Synchronization**: Mathematical lockstep coordinating 3D fly-through cameras, 2D Recharts waveforms, and optical video scrubbing.
+- **Multiplayer War Room**: Real-time collaborative triage with spatial map pins, video scrubber flags, voice note recording, and live presence avatars.

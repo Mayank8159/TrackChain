@@ -4,7 +4,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, Request
 from sqlalchemy.orm import Session
 from src.api.deps import get_db_session
-from src.db.models import TelemetryRecord
+from datetime import datetime, timezone
+from src.db.models import Device, MonitoringSession, TelemetryRecord
+from src.services.alerts import dispatch_device_discovered
 from src.schemas.telemetry import (
     TelemetryBatchRequest,
     TelemetryPointCreate,
@@ -24,11 +26,16 @@ def ingest_telemetry_batch(
     payload: TelemetryBatchRequest,
     request: Request,
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-ID"),
     db: Session = Depends(get_db_session),
     device_auth: Optional[dict] = Depends(get_current_device_optional),
 ):
-    """Ingest a high-frequency telemetry batch with network idempotency protection and rate limiting."""
-    device_id = device_auth["device_id"] if device_auth else payload.device_id
+    """Ingest a high-frequency telemetry batch with network idempotency protection, auto-discovery, and rate limiting."""
+    device_id = (
+        device_auth["device_id"]
+        if device_auth
+        else (payload.device_id or x_device_id or "edge-rpi-01")
+    )
     idemp_key = x_idempotency_key if isinstance(x_idempotency_key, str) else (payload.idempotency_key if isinstance(getattr(payload, "idempotency_key", None), str) else None)
     if idemp_key:
         cached = check_idempotency(db, idemp_key, entity_type="telemetry")
@@ -36,6 +43,53 @@ def ingest_telemetry_batch(
             return cached
 
     raw_samples = payload.samples or payload.points or []
+
+    # Zero-Touch Node Auto-Discovery: Check if device exists in registry
+    if device_id:
+        existing_device = db.query(Device).filter(Device.device_id == device_id).first()
+        if not existing_device:
+            first_sample = raw_samples[0] if raw_samples else None
+            sample_lat = getattr(first_sample, "latitude", None)
+            sample_lon = getattr(first_sample, "longitude", None)
+            new_device = Device(
+                device_id=device_id,
+                device_name=f"Edge Node {device_id}",
+                hardware_version="Raspberry Pi 5 (Auto-Discovered)",
+                firmware_version="v1.0.0",
+                camera_model="Sony IMX477",
+                status="pending_approval",
+                last_seen_at=datetime.now(timezone.utc),
+            )
+            db.add(new_device)
+            try:
+                db.commit()
+                dispatch_device_discovered(new_device, lat=sample_lat, lon=sample_lon)
+            except Exception:
+                db.rollback()
+        else:
+            existing_device.last_seen_at = datetime.now(timezone.utc)
+            db.commit()
+
+    # Ensure MonitoringSession exists to satisfy foreign key constraint
+    active_session_id = payload.session_id or "ses-default-live"
+    session_rec = db.query(MonitoringSession).filter(MonitoringSession.id == active_session_id).first()
+    if not session_rec:
+        new_session = MonitoringSession(
+            id=active_session_id,
+            device_id=device_id,
+            name=f"Auto Inspection ({active_session_id})",
+            route_name="NDLS-AGC Mainline",
+            track_id="TRACK-MAIN-UP",
+            track_section="New Delhi - Agra Cantt Corridor",
+            status="active",
+            start_time=datetime.now(timezone.utc),
+        )
+        db.add(new_session)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
     records = [
         TelemetryRecord(
             session_id=p.session_id or payload.session_id,

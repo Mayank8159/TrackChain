@@ -1,10 +1,11 @@
-// Native Server-Sent Events (SSE) client for TrackChain real-time alerts (tc.v1).
+// Native Server-Sent Events (SSE) client for TrackChain real-time alerts & auto-discovery (tc.v1).
 
 import type { DefectEvent, RealtimePayload } from "./types";
 import { env } from "./env";
 
 export type ConnectionStatusType = "connecting" | "connected" | "disconnected";
 export type AlertStreamListener = (data: Partial<DefectEvent> | any) => void;
+export type DeviceDiscoveredListener = (device: any) => void;
 export type RealtimeListener = (payload: RealtimePayload) => void;
 export type StatusListener = (status: ConnectionStatusType) => void;
 
@@ -12,6 +13,7 @@ class SSEClient {
   private eventSource: EventSource | null = null;
   private status: ConnectionStatusType = "disconnected";
   private alertListeners: Set<AlertStreamListener> = new Set();
+  private deviceListeners: Set<DeviceDiscoveredListener> = new Set();
   private realtimeListeners: Set<RealtimeListener> = new Set();
   private statusListeners: Set<StatusListener> = new Set();
   private reconnectAttempts = 0;
@@ -63,6 +65,21 @@ class SSEClient {
         }
       });
 
+      // Listen for custom "device_discovered" event from FastAPI backend (Zero-Touch Auto-Discovery)
+      this.eventSource.addEventListener("device_discovered", (event: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          this.notifyDeviceDiscovered(parsed);
+          this.notifyRealtime({
+            type: "device_discovered",
+            data: parsed,
+            timestamp: new Date().toISOString(),
+          });
+        } catch {
+          // ignore
+        }
+      });
+
       // Listen for "ping" keepalive events
       this.eventSource.addEventListener("ping", () => {
         if (this.status !== "connected") {
@@ -76,6 +93,8 @@ class SSEClient {
           const parsed = JSON.parse(event.data);
           if (parsed.event === "defect_alert" || parsed.defect_class) {
             this.notifyAlert(parsed.data || parsed);
+          } else if (parsed.event === "device_discovered" || parsed.is_discovered) {
+            this.notifyDeviceDiscovered(parsed.data || parsed);
           }
         } catch {
           // ignore
@@ -122,6 +141,17 @@ class SSEClient {
     };
   }
 
+  public subscribeDeviceDiscovered(listener: DeviceDiscoveredListener): () => void {
+    this.deviceListeners.add(listener);
+    if (this.status === "disconnected" && !this.isConnecting) {
+      this.connect();
+    }
+    return () => {
+      this.deviceListeners.delete(listener);
+      this.checkAutoDisconnect();
+    };
+  }
+
   public subscribe(listener: RealtimeListener): () => void {
     this.realtimeListeners.add(listener);
     if (this.status === "disconnected" && !this.isConnecting) {
@@ -160,6 +190,14 @@ class SSEClient {
     });
   }
 
+  private notifyDeviceDiscovered(data: any) {
+    this.deviceListeners.forEach((fn) => {
+      try {
+        fn(data);
+      } catch {}
+    });
+  }
+
   private notifyRealtime(payload: RealtimePayload) {
     this.realtimeListeners.forEach((fn) => {
       try {
@@ -170,7 +208,7 @@ class SSEClient {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    if (this.alertListeners.size === 0 && this.realtimeListeners.size === 0) return;
+    if (this.alertListeners.size === 0 && this.deviceListeners.size === 0 && this.realtimeListeners.size === 0) return;
 
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 15000);
@@ -180,7 +218,7 @@ class SSEClient {
   }
 
   private checkAutoDisconnect() {
-    if (this.alertListeners.size === 0 && this.realtimeListeners.size === 0) {
+    if (this.alertListeners.size === 0 && this.deviceListeners.size === 0 && this.realtimeListeners.size === 0) {
       // Keep running or gracefully disconnect when no subscribers
     }
   }

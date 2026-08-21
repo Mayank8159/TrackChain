@@ -31,6 +31,9 @@ import { Button } from "@/components/ui/Button";
 import { DeviceHealthPanel } from "@/components/devices/DeviceHealthPanel";
 import { NodeOnboardingWizard } from "@/components/devices/NodeOnboardingWizard";
 import { useNodeOnboardingStore } from "@/stores/node-onboarding-store";
+import { useDeviceStore } from "@/stores/device-store";
+import { sseClient } from "@/lib/sse";
+import { useQueryClient } from "@tanstack/react-query";
 import { DataError } from "@/components/ui/DataError";
 import { useModeStore } from "@/stores/mode-store";
 import { useDevices } from "@/hooks/useDevices";
@@ -41,6 +44,8 @@ import type { Device } from "@/lib/types";
 export default function DevicesPage() {
   const { mode, pingMs } = useModeStore();
   const { openWizard } = useNodeOnboardingStore();
+  const { discoveredDevices, newlyDiscoveredIds, addDiscoveredNode } = useDeviceStore();
+  const queryClient = useQueryClient();
   const { data: initialDevices = [], isError, refetch } = useDevices();
   const [devicesList, setDevicesList] = useState<Device[]>([]);
   const { showToast } = useToast();
@@ -50,6 +55,21 @@ export default function DevicesPage() {
   const [deviceActionsState, setDeviceActionsState] = useState<Record<string, string>>({});
   const [isRotatingSecret, setIsRotatingSecret] = useState(false);
 
+  // Listen to SSE live device discovery
+  React.useEffect(() => {
+    const unsub = sseClient.subscribeDeviceDiscovered((raw) => {
+      if (!raw) return;
+      const dev = addDiscoveredNode(raw);
+      queryClient.invalidateQueries({ queryKey: ["devices"] });
+      showToast({
+        type: "success",
+        title: "🟢 Edge Node Auto-Discovered",
+        description: `Hardware [${dev.deviceId}] materialized on network! Status: ${dev.status.toUpperCase()}`,
+      });
+    });
+    return () => unsub();
+  }, [addDiscoveredNode, queryClient, showToast]);
+
   // Sync if query data loads
   React.useEffect(() => {
     if (initialDevices.length > 0 && devicesList.length === 0) {
@@ -57,7 +77,17 @@ export default function DevicesPage() {
     }
   }, [initialDevices, devicesList.length]);
 
-  const devices = devicesList.length > 0 ? devicesList : initialDevices;
+  // Merge discovered devices with initial devices
+  const devices = React.useMemo(() => {
+    const map = new Map<string, Device>();
+    discoveredDevices.forEach((d) => map.set(d.deviceId, d));
+    (devicesList.length > 0 ? devicesList : initialDevices).forEach((d) => {
+      if (!map.has(d.deviceId)) {
+        map.set(d.deviceId, d);
+      }
+    });
+    return Array.from(map.values());
+  }, [discoveredDevices, devicesList, initialDevices]);
 
   const handleRegisterDevice = (newDevice: Device) => {
     setDevicesList((prev) => [newDevice, ...prev.filter((d) => d.deviceId !== newDevice.deviceId)]);
@@ -322,32 +352,50 @@ export default function DevicesPage() {
             const temp = device.cpuTempC || 44.5;
             const isTempCritical = temp > 80;
             const isTempWarning = temp > 65;
+            const isNewlyDiscovered = newlyDiscoveredIds.includes(device.deviceId) || Boolean(device.isDiscovered);
 
             return (
               <div
                 key={device.deviceId}
-                className="relative rounded-xl border border-scada-border bg-slate-900 shadow-xl overflow-hidden flex flex-col justify-between"
+                className={`relative rounded-xl border bg-slate-900 shadow-xl overflow-hidden flex flex-col justify-between transition-all duration-500 ${
+                  isNewlyDiscovered
+                    ? "animate-node-entrance border-cyan-500/80 bg-slate-900/95 ring-1 ring-cyan-500/40"
+                    : "border-scada-border"
+                }`}
               >
                 {/* Card Top Section */}
                 <div className="p-4 space-y-3 font-mono">
                   {/* Header */}
                   <div className="flex items-start justify-between gap-2 border-b border-scada-border/60 pb-3">
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span
                           className={`h-2.5 w-2.5 rounded-full ${
                             actionState
                               ? "bg-amber-400 animate-spin"
                               : device.status === "recording" || device.status === "online"
                               ? "bg-emerald-400 animate-pulse"
+                              : device.status === "pending_approval"
+                              ? "bg-cyan-400 animate-pulse"
                               : "bg-red-400"
                           }`}
                         />
                         <h3 className="font-bold text-white text-sm">
                           {device.deviceName}
                         </h3>
+                        {isNewlyDiscovered && (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/50 animate-pulse flex items-center gap-1 shadow-[0_0_10px_rgba(6,182,212,0.4)]">
+                            <Zap size={10} className="text-cyan-400" />
+                            AUTO-DISCOVERED
+                          </span>
+                        )}
                       </div>
-                      <span className="badge-cyan text-[10px]">{device.deviceId}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="badge-cyan text-[10px]">{device.deviceId}</span>
+                        {device.status === "pending_approval" && (
+                          <span className="badge-amber text-[9px]">PENDING APPROVAL</span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Options Menu Button */}

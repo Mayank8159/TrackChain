@@ -27,55 +27,42 @@ export function useRoutedData<T>({
   queryKey,
   demoData,
   fetchReal,
-  staleTime = 15000,
+  staleTime = 10000,
   enabled = true,
   refetchInterval,
 }: RoutedDataOptions<T>): RoutedDataResult<T> {
   const { mode, setConnectionState } = useModeStore();
-
   const isDemo = mode === "DEMO";
 
-  // 1. DEMO Mode: Return deterministic mock data synchronously with no network calls
   const resolvedDemoData = typeof demoData === "function" ? (demoData as () => T)() : demoData;
 
-  const realQuery = useQuery<T, Error>({
-    queryKey: ["real_data", ...queryKey],
+  const query = useQuery<T, Error>({
+    queryKey: ["app_data", mode, ...queryKey],
     queryFn: fetchReal,
-    enabled: enabled && !isDemo,
+    enabled: enabled,
     staleTime,
-    refetchInterval: !isDemo ? refetchInterval : undefined,
+    refetchInterval,
     retry: 1,
     retryDelay: 1000,
   });
 
-  // Track connection state when in REAL mode
   useEffect(() => {
-    if (isDemo) return;
-
-    if (realQuery.isError) {
-      setConnectionState("ERROR");
-    } else if (realQuery.isSuccess) {
+    if (query.isError) {
+      if (!isDemo) setConnectionState("ERROR");
+    } else if (query.isSuccess) {
       setConnectionState("ACTIVE");
     }
-  }, [isDemo, realQuery.isError, realQuery.isSuccess, setConnectionState]);
+  }, [isDemo, query.isError, query.isSuccess, setConnectionState]);
 
-  if (isDemo) {
-    return {
-      data: resolvedDemoData,
-      isLoading: false,
-      isError: false,
-      error: null,
-      isDemo: true,
-      refetch: async () => resolvedDemoData,
-    };
-  }
+  const activeData = query.data !== undefined ? query.data : resolvedDemoData;
 
   return {
-    data: (realQuery.data !== undefined ? realQuery.data : resolvedDemoData),
-    isLoading: realQuery.isLoading,
-    isError: realQuery.isError,
-    error: realQuery.error,
-    isDemo: false,
-    refetch: realQuery.refetch,
+    data: activeData,
+    isLoading: query.isLoading && activeData === undefined,
+    isError: !isDemo && query.isError,
+    error: query.error,
+    isDemo,
+    refetch: query.refetch,
   };
 }
+

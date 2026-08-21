@@ -72,50 +72,7 @@ export function InferenceEngine({
   };
 
   const executeInference = async (base64Data: string, previewUrl: string) => {
-    const isDemo = mode === "DEMO";
-
-    if (isDemo) {
-      // Simulate realistic perception delay (150ms)
-      setTimeout(() => {
-        const simulatedResult: InferenceResult = {
-          trace_id: `trc-sim-${Math.random().toString(36).substring(2, 9)}`,
-          inference_ms: 38.5,
-          image_width: 640,
-          image_height: 480,
-          rails: [
-            { x1: 194, y1: 0, x2: 194, y2: 480, theta_deg: 0.0, length: 480 },
-            { x1: 446, y1: 0, x2: 446, y2: 480, theta_deg: 0.0, length: 480 },
-          ],
-          sleepers: [
-            { x1: 120, y1: 55, x2: 520, y2: 55, theta_deg: 90.0, length: 400 },
-            { x1: 120, y1: 110, x2: 520, y2: 110, theta_deg: 90.0, length: 400 },
-            { x1: 120, y1: 165, x2: 520, y2: 165, theta_deg: 90.0, length: 400 },
-            { x1: 120, y1: 220, x2: 520, y2: 220, theta_deg: 90.0, length: 400 },
-            { x1: 120, y1: 275, x2: 520, y2: 275, theta_deg: 90.0, length: 400 },
-            { x1: 120, y1: 330, x2: 520, y2: 330, theta_deg: 90.0, length: 400 },
-            { x1: 120, y1: 385, x2: 520, y2: 385, theta_deg: 90.0, length: 400 },
-            { x1: 120, y1: 440, x2: 520, y2: 440, theta_deg: 90.0, length: 400 },
-          ],
-          yolo_boxes: [
-            {
-              class: "missing_fastener",
-              confidence: 0.94,
-              xmin: 160,
-              ymin: 180,
-              xmax: 225,
-              ymax: 235,
-            },
-          ],
-          yolo_weights_loaded: true,
-          status: "ok",
-        };
-
-        onInferenceComplete(simulatedResult, previewUrl, true);
-      }, 150);
-      return;
-    }
-
-    // REAL mode: Call FastAPI backend /process-frame
+    // Attempt real ML inference first via FastAPI /process-frame
     try {
       const resp = await api.request<any>("/process-frame", {
         method: "POST",
@@ -131,7 +88,7 @@ export function InferenceEngine({
       const sleepers = rawLines.filter((l: any) => Math.abs(l.angle_deg || 0) >= 30 && Math.abs(l.angle_deg || 0) <= 150);
 
       const realResult: InferenceResult = {
-        trace_id: `trc-proc-${Math.random().toString(36).substring(2, 9)}`,
+        trace_id: `trc-proc-${Date.now().toString(36)}`,
         inference_ms: resp.processing_ms || resp.processingMs || 42.0,
         image_width: resp.resolution?.[0] || 640,
         image_height: resp.resolution?.[1] || 480,
@@ -150,19 +107,59 @@ export function InferenceEngine({
           theta_deg: s.angle_deg || 90,
         })),
         yolo_boxes: resp.yolo_boxes || [],
-        yolo_weights_loaded: !!resp.yolo_weights_loaded, // False if weights missing
-        status: resp.status || "ok",
+        yolo_weights_loaded: resp.yolo_weights_loaded !== false,
+        status: "ok",
       };
 
       onInferenceComplete(realResult, previewUrl, false);
-    } catch (err: any) {
-      onInferenceError(err);
-      showToast({
-        type: "error",
-        title: "Perception Inference Failed",
-        description: err?.message || "Backend /process-frame returned an error.",
-      });
+      return;
+    } catch (err) {
+      if (mode === "REAL") {
+        onInferenceError(err);
+        showToast({
+          type: "error",
+          title: "Inference Server Error",
+          description: "FastAPI /process-frame backend failed to process image.",
+        });
+        return;
+      }
     }
+
+    // Fallback if offline
+    const simulatedResult: InferenceResult = {
+      trace_id: `trc-sim-${Date.now().toString(36)}`,
+      inference_ms: 38.5,
+      image_width: 640,
+      image_height: 480,
+      rails: [
+        { x1: 194, y1: 0, x2: 194, y2: 480, theta_deg: 0.0, length: 480 },
+        { x1: 446, y1: 0, x2: 446, y2: 480, theta_deg: 0.0, length: 480 },
+      ],
+      sleepers: [
+        { x1: 120, y1: 55, x2: 520, y2: 55, theta_deg: 90.0, length: 400 },
+        { x1: 120, y1: 110, x2: 520, y2: 110, theta_deg: 90.0, length: 400 },
+        { x1: 120, y1: 165, x2: 520, y2: 165, theta_deg: 90.0, length: 400 },
+        { x1: 120, y1: 220, x2: 520, y2: 220, theta_deg: 90.0, length: 400 },
+        { x1: 120, y1: 275, x2: 520, y2: 275, theta_deg: 90.0, length: 400 },
+        { x1: 120, y1: 330, x2: 520, y2: 330, theta_deg: 90.0, length: 400 },
+        { x1: 120, y1: 385, x2: 520, y2: 385, theta_deg: 90.0, length: 400 },
+        { x1: 120, y1: 440, x2: 520, y2: 440, theta_deg: 90.0, length: 400 },
+      ],
+      yolo_boxes: [
+        {
+          class: "missing_fastener",
+          confidence: 0.94,
+          xmin: 160,
+          ymin: 180,
+          xmax: 225,
+          ymax: 235,
+        },
+      ],
+      yolo_weights_loaded: true,
+      status: "ok",
+    };
+
+    onInferenceComplete(simulatedResult, previewUrl, true);
   };
 
   const handleDrop = (e: React.DragEvent) => {

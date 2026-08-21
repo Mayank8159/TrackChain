@@ -93,6 +93,7 @@ class LineGeometry(BaseContractModel):
 class ProcessFrameRequest(BaseContractModel):
     camera_id: str = Field(default="cam-01")
     frame: str = Field(..., description="Base64 encoded JPEG/PNG frame")
+    trace_id: Optional[str] = None
 
 
 class ProcessFrameResponse(BaseContractModel):
@@ -100,5 +101,11 @@ class ProcessFrameResponse(BaseContractModel):
     resolution: Tuple[int, int]
     line_count: int
     lines: List[LineGeometry]
+    rails: List[LineGeometry] = Field(default_factory=list)
+    sleepers: List[LineGeometry] = Field(default_factory=list)
     processing_ms: float
+    inference_ms: Optional[float] = None
+    yolo_weights_loaded: bool = False
+    yolo_boxes: List[dict] = Field(default_factory=list)
     status: str
+

@@ -92,10 +92,14 @@ export interface Device {
   cameraModel?: string;
   imuModel?: string;
   gnssModel?: string;
-  status: "online" | "offline" | "recording" | "error";
+  status: "online" | "offline" | "recording" | "error" | "pending_approval" | "active" | "revoked";
   batteryVoltageV?: number;
   cpuTempC?: number;
   lastSeenAt?: string;
+  latitude?: number;
+  longitude?: number;
+  isDiscovered?: boolean;
+  discoveredAt?: string;
 }
 
 export interface MonitoringSession {
@@ -519,4 +523,36 @@ export interface WorkOrder {
   estimatedTqiRecovery: number;  // +N TQI points post-intervention
   generatedAt: string;           // ISO timestamp
 }
+
+// ============================================================================
+// 13. Collaboration & War Room (tc.collab.v1)
+// ============================================================================
+
+export interface UserPresence {
+  id: string;
+  name: string;
+  role: string;
+  avatarColor: string; // e.g., "bg-violet-500", "bg-emerald-500"
+  status: "online" | "offline" | "idle";
+}
+
+export interface Annotation {
+  id: string;
+  type: "SPATIAL" | "TEMPORAL" | "INCIDENT";
+  target_id?: string;             // e.g., defect_id or session_id
+  coordinates?: [number, number]; // [lat, lon] for SPATIAL
+  timestamp_sec?: number;         // For TEMPORAL (video timeline)
+  author: UserPresence;
+  text: string;
+  audio_blob_url?: string;        // Local object URL for voice notes
+  mentions: string[];             // User IDs tagged via @
+  created_at: number;             // Epoch ms
+}
+
+export interface WarRoom {
+  incidentId: string;
+  activeUsers: UserPresence[];
+  annotations: Annotation[];
+}
+
 

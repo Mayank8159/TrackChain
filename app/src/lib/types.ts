@@ -41,7 +41,7 @@ export interface FilterState {
 }
 
 export interface RealtimePayload {
-  type: "telemetry" | "defect" | "alert" | "status";
+  type: "telemetry" | "defect" | "alert" | "status" | "device_discovered";
   data: any;
   timestamp: string;
 }

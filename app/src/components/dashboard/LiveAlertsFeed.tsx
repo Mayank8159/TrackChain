@@ -93,10 +93,10 @@ export function LiveAlertsFeed() {
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-mono font-bold text-white uppercase truncate">
-                      {alert.defectClass.replace("_", " ")}
+                      {(alert.defectClass || (alert as any).defect_class || "anomaly").replace(/_/g, " ")}
                     </span>
                     <span className="text-[11px] font-mono text-cyan-400">
-                      {formatChainage(alert.chainageM)}
+                      {formatChainage(alert.chainageM ?? (alert as any).chainage_m ?? 0)}
                     </span>
                   </div>
                   <p className="text-[11px] font-mono text-scada-muted truncate mt-0.5">
