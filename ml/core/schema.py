@@ -255,6 +255,7 @@ class SegmentDecision:
     schema_version: str = SCHEMA_VERSION
     source: Optional[str] = None
     cross_modal_boost: float = 1.0
+    action: str = "Routine inspection cycle maintained."
     traces: List[ExplainabilityTrace] = field(default_factory=list)
 
     def __init__(
@@ -273,6 +274,7 @@ class SegmentDecision:
         schema_version: str = SCHEMA_VERSION,
         source: Optional[str] = None,
         cross_modal_boost: float = 1.0,
+        action: str = "Routine inspection cycle maintained.",
         traces: Optional[List[ExplainabilityTrace]] = None,
         **kwargs,
     ):
@@ -290,6 +292,7 @@ class SegmentDecision:
         self.schema_version = schema_version
         self.source = source
         self.cross_modal_boost = float(cross_modal_boost)
+        self.action = str(action or kwargs.get("action", "Routine inspection cycle maintained."))
         self.traces = traces if traces is not None else []
         for k, v in kwargs.items():
             if k in ("chainage_start_m", "start_chainage_m"):

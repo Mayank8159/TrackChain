@@ -107,14 +107,17 @@ def run_capstone_demo(n_segments: int = 5):
         chainage_str = f"{seg.chainage_start_m:.1f}m - {seg.chainage_end_m:.1f}m"
         print(f"{chainage_str:<15} | {scenario_name:<25} | {decision.decision.value:<14} | {decision.severity.value:<9} | {dt_ms:>5.1f} ms")
 
+        prim_def = decision.primary_defect
+        prim_def_str = prim_def.value if hasattr(prim_def, "value") else str(prim_def or "none")
+
         demo_results.append({
             "chainage": chainage_str,
             "scenario": scenario_name,
-            "decision": decision.decision.value,
-            "severity": decision.severity.value,
+            "decision": decision.decision.value if hasattr(decision.decision, "value") else str(decision.decision),
+            "severity": decision.severity.value if hasattr(decision.severity, "value") else str(decision.severity),
             "confidence": round(float(decision.confidence), 4),
-            "primary_defect": decision.primary_defect.value if decision.primary_defect else "none",
-            "action": decision.action,
+            "primary_defect": prim_def_str,
+            "action": getattr(decision, "action", "Routine inspection cycle maintained."),
             "latency_ms": round(dt_ms, 2),
         })
 
