@@ -1,0 +1,7 @@
+{
+  "method": "sigmoid_threshold_scaling",
+  "threshold_p99": 3.7391321659088135,
+  "steepness_k": 2.0,
+  "percentile": 99.0,
+  "is_fitted": true
+}

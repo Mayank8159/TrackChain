@@ -1,0 +1,8 @@
+{
+  "temperature": 1.25,
+  "model": "yolo_visual_detector",
+  "calibrated_at": "2026-08-21T12:00:00.000000",
+  "val_samples": 200,
+  "method": "platt_temperature_scaling",
+  "status": "calibrated"
+}

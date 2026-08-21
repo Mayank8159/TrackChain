@@ -184,14 +184,61 @@ def generate_synthetic_normal(output_dir: Path, count: int = 100) -> List[Path]:
 # Augmentation Pipeline
 # ============================================================================
 
+class _SimpleNormalTransform:
+    def __init__(self, fn):
+        self.fn = fn
+    def __call__(self, image=None, **kwargs):
+        img = image if image is not None else kwargs.get("image")
+        if img is None:
+            return {"image": img}
+        return {"image": self.fn(img)}
+
+
+def _fallback_lighting(img: np.ndarray) -> np.ndarray:
+    alpha = float(np.random.uniform(0.75, 1.25))
+    beta = float(np.random.uniform(-25, 25))
+    return np.clip(img.astype(np.float32) * alpha + beta, 0, 255).astype(np.uint8)
+
+
+def _fallback_weather(img: np.ndarray) -> np.ndarray:
+    noise = np.random.normal(0, 8, img.shape)
+    return np.clip(img.astype(np.float32) + noise, 0, 255).astype(np.uint8)
+
+
+def _fallback_geometric(img: np.ndarray) -> np.ndarray:
+    if np.random.rand() > 0.5:
+        img = cv2.flip(img, 1)
+    return img
+
+
+def _fallback_texture(img: np.ndarray) -> np.ndarray:
+    k = int(np.random.choice([3, 5]))
+    return cv2.GaussianBlur(img, (k, k), 0)
+
+
+def _fallback_color(img: np.ndarray) -> np.ndarray:
+    try:
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
+        hsv[:, :, 1] = np.clip(hsv[:, :, 1] * np.random.uniform(0.8, 1.2), 0, 255)
+        return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+    except Exception:
+        return img
+
+
 def create_normal_augmentation_pipeline():
     """
     Create augmentation pipeline for normal track images.
     Focuses on realistic variations without introducing defects.
-    Compatible across Albumentations versions.
+    Compatible across Albumentations versions with pure OpenCV/NumPy fallbacks.
     """
     if A is None:
-        return {}
+        return {
+            'lighting': _SimpleNormalTransform(_fallback_lighting),
+            'weather': _SimpleNormalTransform(_fallback_weather),
+            'geometric': _SimpleNormalTransform(_fallback_geometric),
+            'texture': _SimpleNormalTransform(_fallback_texture),
+            'color': _SimpleNormalTransform(_fallback_color),
+        }
     
     # Lighting variations (different times of day)
     lighting = A.Compose([

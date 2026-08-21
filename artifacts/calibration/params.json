@@ -1,0 +1,6 @@
+{
+  "bilstm_temperature": 1.8200551271438599,
+  "sequence_vae_p99_threshold": 3.7391321659088135,
+  "patchcore_p99_distance": 21.877426147460938,
+  "calibration_status": "fitted"
+}

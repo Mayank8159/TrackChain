@@ -1,0 +1,13 @@
+{
+  "threshold_p99": 3.7391,
+  "threshold_recon_p99": 2.8124,
+  "threshold_mahalanobis_p99": 5.9015,
+  "steepness": 0.5,
+  "target_fpr": 0.01,
+  "model": "sequence_vae_geometry_novel",
+  "val_samples": 600,
+  "mean_recon_error": 0.4521,
+  "std_recon_error": 0.3214,
+  "mean_mahalanobis": 1.2140,
+  "std_mahalanobis": 0.8923
+}

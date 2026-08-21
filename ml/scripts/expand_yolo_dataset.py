@@ -228,13 +228,78 @@ def load_rsdds_dataset(rsdds_dir: Path) -> List[Dict]:
 # Augmentation Pipeline
 # ============================================================================
 
+class _SimpleYoloTransform:
+    def __init__(self, fn, uses_bbox=False):
+        self.fn = fn
+        self.uses_bbox = uses_bbox
+    def __call__(self, image=None, bboxes=None, class_labels=None, **kwargs):
+        img = image if image is not None else kwargs.get("image")
+        boxes = bboxes if bboxes is not None else kwargs.get("bboxes", [])
+        labels = class_labels if class_labels is not None else kwargs.get("class_labels", [])
+        if img is None:
+            return {"image": img, "bboxes": boxes, "class_labels": labels}
+        res_img, res_boxes = self.fn(img, boxes)
+        return {"image": res_img, "bboxes": res_boxes, "class_labels": labels}
+
+
+def _fallback_yolo_basic(img: np.ndarray, bboxes: List[List[float]]) -> Tuple[np.ndarray, List[List[float]]]:
+    if np.random.rand() > 0.5:
+        img = cv2.flip(img, 1)
+        new_boxes = []
+        for box in bboxes:
+            new_box = [1.0 - box[0], box[1], box[2], box[3]]
+            new_boxes.append(new_box)
+        return img, new_boxes
+    return img, bboxes
+
+
+def _fallback_yolo_lighting(img: np.ndarray, bboxes: List[List[float]]) -> Tuple[np.ndarray, List[List[float]]]:
+    alpha = float(np.random.uniform(0.8, 1.2))
+    beta = float(np.random.uniform(-20, 20))
+    img = np.clip(img.astype(np.float32) * alpha + beta, 0, 255).astype(np.uint8)
+    return img, bboxes
+
+
+def _fallback_yolo_weather(img: np.ndarray, bboxes: List[List[float]]) -> Tuple[np.ndarray, List[List[float]]]:
+    noise = np.random.normal(0, 8, img.shape)
+    img = np.clip(img.astype(np.float32) + noise, 0, 255).astype(np.uint8)
+    return img, bboxes
+
+
+def _fallback_yolo_motion(img: np.ndarray, bboxes: List[List[float]]) -> Tuple[np.ndarray, List[List[float]]]:
+    k = int(np.random.choice([3, 5]))
+    img = cv2.GaussianBlur(img, (k, k), 0)
+    return img, bboxes
+
+
+def _fallback_yolo_geometric(img: np.ndarray, bboxes: List[List[float]]) -> Tuple[np.ndarray, List[List[float]]]:
+    return img, bboxes
+
+
+def _fallback_yolo_occlusion(img: np.ndarray, bboxes: List[List[float]]) -> Tuple[np.ndarray, List[List[float]]]:
+    h, w = img.shape[:2]
+    rx = np.random.randint(0, max(1, w - 20))
+    ry = np.random.randint(0, max(1, h - 20))
+    img = img.copy()
+    img[ry:ry+15, rx:rx+15] = 0
+    return img, bboxes
+
+
 def create_railway_augmentation_pipeline():
     """
     Create aggressive augmentation pipeline for railway defect detection.
     Simulates real-world conditions: motion blur, weather, lighting, vibration.
+    Compatible across Albumentations versions with pure OpenCV/NumPy fallbacks.
     """
     if A is None:
-        return None
+        return {
+            'basic': (_SimpleYoloTransform(_fallback_yolo_basic, uses_bbox=True), True),
+            'lighting': (_SimpleYoloTransform(_fallback_yolo_lighting, uses_bbox=False), False),
+            'weather': (_SimpleYoloTransform(_fallback_yolo_weather, uses_bbox=False), False),
+            'motion': (_SimpleYoloTransform(_fallback_yolo_motion, uses_bbox=False), False),
+            'geometric': (_SimpleYoloTransform(_fallback_yolo_geometric, uses_bbox=True), True),
+            'occlusion': (_SimpleYoloTransform(_fallback_yolo_occlusion, uses_bbox=False), False),
+        }
     
     # Level 1: Basic transforms
     basic_transforms = A.Compose([

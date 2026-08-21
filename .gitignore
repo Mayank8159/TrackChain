@@ -41,6 +41,7 @@ artifacts/checkpoints/*
 !artifacts/checkpoints/.gitkeep
 artifacts/calibration/*
 !artifacts/calibration/.gitkeep
+!artifacts/calibration/*.json
 artifacts/exports/*
 !artifacts/exports/.gitkeep
 *.pt

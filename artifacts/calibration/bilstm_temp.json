@@ -1,0 +1,7 @@
+{
+  "temperature": 1.820,
+  "ece": 0.0345,
+  "model": "bilstm_geometry_typing",
+  "val_samples": 600,
+  "best_val_acc": 96.40
+}
