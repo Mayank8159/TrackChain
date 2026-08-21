@@ -57,7 +57,7 @@ def train_patchcore(
     data_dir: str = "data/external/rail_normal_only",
     config_path: str = "ml/configs/anomaly.yaml",
     sampling_ratio: float = 0.10,
-    device: str = "cpu",
+    device: Optional[str] = "auto",
     output_checkpoint: Optional[str] = None,
     output_calibration: Optional[str] = None,
 ) -> Tuple[str, str]:
@@ -72,6 +72,11 @@ def train_patchcore(
     repo_root = ModelRegistry.ROOT
     abs_data_dir = Path(data_dir) if Path(data_dir).is_absolute() else repo_root / data_dir
     abs_config_path = Path(config_path) if Path(config_path).is_absolute() else repo_root / config_path
+
+    if device in ["auto", None, ""]:
+        actual_device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        actual_device = "cuda" if device.startswith("cuda") or device == "0" else device
 
     # Load configuration
     cfg = {}
@@ -113,7 +118,7 @@ def train_patchcore(
     # Initialize detector backbone
     detector = PatchCoreAnomalyDetector(
         backbone_name=backbone_name,
-        device=device,
+        device=actual_device,
     )
     transform = get_default_transform(224)
 

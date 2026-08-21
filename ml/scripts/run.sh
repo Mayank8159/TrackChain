@@ -24,6 +24,8 @@ CHECKPOINT_DIR="$REPO_ROOT/artifacts/checkpoints"
 EXPORT_DIR="$REPO_ROOT/artifacts/exports"
 DATA_ROOT="$REPO_ROOT/data"
 
+export PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"
+
 EPOCHS_YOLO=${EPOCHS_YOLO:-50}
 EPOCHS_BILSTM=${EPOCHS_BILSTM:-20}
 EPOCHS_VAE=${EPOCHS_VAE:-30}
@@ -33,6 +35,16 @@ SKIP_YOLO=false
 SKIP_PATCHCORE=false
 SKIP_BILSTM=false
 SKIP_VAE=false
+
+# Auto-detect CUDA GPU
+if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+    DEFAULT_DEVICE="0"
+    DEVICE_INFO=$(python -c "import torch; print(f'CUDA GPU 0 ({torch.cuda.get_device_name(0)})')")
+else
+    DEFAULT_DEVICE="cpu"
+    DEVICE_INFO="CPU (No CUDA device found)"
+fi
+TRAIN_DEVICE=${TRAIN_DEVICE:-"$DEFAULT_DEVICE"}
 
 # --- Color output ------------------------------------------------------------
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -69,6 +81,7 @@ mkdir -p "$LOG_DIR" "$CHECKPOINT_DIR/vision" "$CHECKPOINT_DIR/geometry" "$EXPORT
 START_TIME=$(date +%s)
 header "TrackChain Phase 2 — Master ML Training Pipeline"
 info "Repo root:      $REPO_ROOT"
+info "Compute Device: $DEVICE_INFO"
 info "YOLO epochs:    $EPOCHS_YOLO"
 info "Bi-LSTM epochs: $EPOCHS_BILSTM"
 info "VAE epochs:     $EPOCHS_VAE"
@@ -135,7 +148,8 @@ else
         python ml/scripts/train_detector.py \
             --data "$DATA_ROOT/external/rail_defects/data.yaml" \
             --epochs "$EPOCHS_YOLO" \
-            --batch "$BATCH_SIZE"
+            --batch "$BATCH_SIZE" \
+            --device "$TRAIN_DEVICE"
 
     run_step "export_yolo_onnx" \
         "$EXPORT_DIR/.yolo_onnx.done" \
@@ -162,7 +176,8 @@ else
         "$CHECKPOINT_DIR/vision/.patchcore_train.done" \
         python ml/scripts/train_anomaly.py \
             --coreset_ratio 0.10 \
-            --fpr_target 0.01
+            --fpr_target 0.01 \
+            --device "$TRAIN_DEVICE"
 fi
 
 # =============================================================================

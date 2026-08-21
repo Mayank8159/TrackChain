@@ -16,7 +16,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", default="ml/configs/anomaly.yaml", help="Path to anomaly.yaml")
     parser.add_argument("--coreset_ratio", "--ratio", dest="coreset_ratio", type=float, default=0.10, help="Coreset subsampling ratio")
     parser.add_argument("--fpr_target", type=float, default=0.01, help="Target FPR on normal validation track (e.g. 0.01 for P99)")
-    parser.add_argument("--device", default="cpu", help="Device ('cpu' or 'cuda')")
+    parser.add_argument("--device", default="auto", help="Device ('auto', 'cuda', or 'cpu')")
     args = parser.parse_args()
 
     train_patchcore(

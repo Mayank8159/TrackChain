@@ -2,10 +2,21 @@
 
 import argparse
 import os
+import sys
 import shutil
 import yaml
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+# Ensure project root is in sys.path
+repo_root = Path(__file__).resolve().parent.parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+try:
+    import torch
+except ImportError:
+    torch = None
 
 try:
     from ultralytics import YOLO
@@ -15,32 +26,43 @@ except ImportError:
 from ml.core.registry import ModelRegistry
 
 
+def resolve_device(requested_device: Optional[str] = None) -> str:
+    """Resolve compute device: auto-detects CUDA GPU if available."""
+    if requested_device and requested_device not in ["auto", ""]:
+        return str(requested_device)
+    if torch is not None and torch.cuda.is_available():
+        return "0"
+    return "cpu"
+
+
 def train_yolo_detector(
     data_yaml: str = "data/external/rail_defects/data.yaml",
     config_path: str = "ml/configs/detector.yaml",
     epochs: int = 100,
     batch_size: int = 16,
     img_size: int = 640,
-    device: str = "cpu",
+    device: Optional[str] = "auto",
     output_dir: Optional[str] = None,
 ):
     if YOLO is None:
         raise RuntimeError("Ultralytics is required for training. Install with: pip install ultralytics")
 
-    repo_root = ModelRegistry.ROOT
-    abs_data_yaml = Path(data_yaml) if Path(data_yaml).is_absolute() else repo_root / data_yaml
-    abs_config_path = Path(config_path) if Path(config_path).is_absolute() else repo_root / config_path
+    abs_repo = ModelRegistry.ROOT
+    abs_data_yaml = Path(data_yaml) if Path(data_yaml).is_absolute() else abs_repo / data_yaml
+    abs_config_path = Path(config_path) if Path(config_path).is_absolute() else abs_repo / config_path
     
     if output_dir:
-        abs_output_dir = Path(output_dir) if Path(output_dir).is_absolute() else repo_root / output_dir
+        abs_output_dir = Path(output_dir) if Path(output_dir).is_absolute() else abs_repo / output_dir
     else:
         abs_output_dir = ModelRegistry.CHECKPOINTS_DIR / "vision"
+
+    target_device = resolve_device(device)
 
     print(f"[INFO] Starting TrackChain YOLOv8n Training Pipeline")
     print(f"       Dataset YAML: {abs_data_yaml}")
     print(f"       Config:       {abs_config_path}")
     print(f"       Output Dir:   {abs_output_dir}")
-    print(f"       Device:       {device}")
+    print(f"       Device:       {target_device}")
     print(f"       Epochs:       {epochs}")
     print(f"       Batch Size:   {batch_size}")
 
@@ -69,7 +91,7 @@ def train_yolo_detector(
         epochs=epochs,
         batch=batch_size,
         imgsz=img_size,
-        device=device,
+        device=target_device,
         optimizer=optimizer,
         lr0=lr0,
         cos_lr=cos_lr,
@@ -106,13 +128,12 @@ def train_yolo_detector(
 
 
 if __name__ == "__main__":
-    from typing import Optional
     parser = argparse.ArgumentParser(description="Train TrackChain YOLOv8n defect detector.")
     parser.add_argument("--data", default="data/external/rail_defects/data.yaml", help="Path to data.yaml")
     parser.add_argument("--config", default="ml/configs/detector.yaml", help="Path to detector.yaml")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--batch", type=int, default=16, help="Batch size")
-    parser.add_argument("--device", default="cpu", help="Device to train on ('cpu' or '0' for CUDA GPU)")
+    parser.add_argument("--device", default="auto", help="Device to train on ('auto', '0' for CUDA GPU, or 'cpu')")
     parser.add_argument("--output-dir", default=None, help="Output directory for checkpoints")
     args = parser.parse_args()
 
