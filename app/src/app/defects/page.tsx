@@ -30,6 +30,7 @@ import { useDefects } from "@/hooks/useDefects";
 import { useExport } from "@/hooks/useExport";
 import { useToast } from "@/components/ui/Toast";
 import { formatChainage, formatTimestamp, formatConfidence } from "@/lib/format";
+import { api } from "@/lib/api";
 import type { DefectEvent } from "@/lib/types";
 
 function DefectRegistryContent() {
@@ -113,8 +114,8 @@ function DefectRegistryContent() {
     });
   }, [defects, severityFilter, classFilter, sourceFilter, searchQuery]);
 
-  // Human-in-the-loop optimistic mutations
-  const handleAcknowledgeDefect = (defect: DefectEvent) => {
+  // Human-in-the-loop mutations (persists to backend in REAL mode)
+  const handleAcknowledgeDefect = async (defect: DefectEvent) => {
     setIsMutating(true);
     setDefectsList((prev) =>
       prev.map((d) =>
@@ -140,6 +141,20 @@ function DefectRegistryContent() {
           : null
       );
     }
+
+    if (mode === "REAL") {
+      try {
+        await api.acknowledgeDefect(defect.id, "Chief Track Inspector");
+        refetch();
+      } catch (err: any) {
+        showToast({
+          type: "error",
+          title: "Backend Update Failed",
+          description: err?.message || "Could not persist acknowledgment to server.",
+        });
+      }
+    }
+
     setIsMutating(false);
     showToast({
       type: "success",
@@ -148,7 +163,7 @@ function DefectRegistryContent() {
     });
   };
 
-  const handleRejectDefect = (defect: DefectEvent) => {
+  const handleRejectDefect = async (defect: DefectEvent) => {
     setIsMutating(true);
     setDefectsList((prev) =>
       prev.map((d) =>
@@ -160,6 +175,20 @@ function DefectRegistryContent() {
         prev ? { ...prev, status: "false_positive" } : null
       );
     }
+
+    if (mode === "REAL") {
+      try {
+        await api.updateDefect(defect.id, { status: "false_positive" });
+        refetch();
+      } catch (err: any) {
+        showToast({
+          type: "error",
+          title: "Backend Update Failed",
+          description: err?.message || "Could not persist status to server.",
+        });
+      }
+    }
+
     setIsMutating(false);
     showToast({
       type: "warning",

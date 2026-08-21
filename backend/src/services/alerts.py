@@ -9,10 +9,22 @@ logger = logging.getLogger("trackchain.alerts")
 
 # In-memory async subscribers list for live SSE streaming
 _subscribers: List[asyncio.Queue] = []
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def set_main_event_loop(loop: asyncio.AbstractEventLoop):
+    """Save reference to main asyncio event loop for threadsafe cross-thread event scheduling."""
+    global _main_loop
+    _main_loop = loop
 
 
 def register_subscriber() -> asyncio.Queue:
     """Register a new SSE stream client."""
+    global _main_loop
+    try:
+        _main_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        pass
     q: asyncio.Queue = asyncio.Queue(maxsize=100)
     _subscribers.append(q)
     return q
@@ -42,6 +54,37 @@ async def broadcast_event(event_type: str, data: Dict[str, Any]):
         unregister_subscriber(dq)
 
 
+def _schedule_broadcast(event_type: str, data: Dict[str, Any]):
+    """Schedule event broadcast from either async context or AnyIO worker thread."""
+    global _main_loop
+    payload = {
+        "event": event_type,
+        "data": data,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    def _enqueue():
+        dead = []
+        for q in list(_subscribers):
+            try:
+                q.put_nowait(payload)
+            except asyncio.QueueFull:
+                dead.append(q)
+            except Exception:
+                pass
+        for d in dead:
+            unregister_subscriber(d)
+
+    if _main_loop and _main_loop.is_running():
+        _main_loop.call_soon_threadsafe(_enqueue)
+    else:
+        try:
+            loop = asyncio.get_running_loop()
+            _enqueue()
+        except RuntimeError:
+            pass
+
+
 async def broadcast_alert(defect_event: Dict[str, Any]):
     """Async broadcast method for critical and high defect alerts."""
     await broadcast_event("defect_alert", defect_event)
@@ -62,24 +105,16 @@ def dispatch_defect_alert(defect: Any):
             f"Confidence: {float(conf):.2%}. Session: {session_id}"
         )
 
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(
-                    broadcast_event(
-                        "defect_alert",
-                        {
-                            "defect_class": str(class_name),
-                            "severity": str(severity_val),
-                            "chainage_m": float(chainage),
-                            "confidence": float(conf),
-                            "session_id": str(session_id),
-                        },
-                    )
-                )
-        except Exception:
-            pass
-
+        _schedule_broadcast(
+            "defect_alert",
+            {
+                "defect_class": str(class_name),
+                "severity": str(severity_val),
+                "chainage_m": float(chainage),
+                "confidence": float(conf),
+                "session_id": str(session_id),
+            },
+        )
         return True
     return False
 
@@ -114,12 +149,6 @@ def dispatch_device_discovered(device: Any, lat: Optional[float] = None, lon: Op
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(broadcast_event("device_discovered", payload))
-    except Exception as exc:
-        logger.warning(f"Could not dispatch device_discovered event: {exc}")
-
+    _schedule_broadcast("device_discovered", payload)
     return payload
 

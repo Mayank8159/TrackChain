@@ -12,6 +12,7 @@ from typing import Any, List, Optional
 from fastapi import FastAPI, HTTPException, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from src.schemas.telemetry import ProcessFrameRequest, ProcessFrameResponse, LineGeometry
 
 # ---------------------------------------------------------------------------
 # Lazy / guarded heavy imports — NEVER at top level for Lambda
@@ -52,6 +53,8 @@ def _load_yolo():
     candidates = [
         Path("artifacts/checkpoints/yolov8n.pt"),
         Path("../artifacts/checkpoints/yolov8n.pt"),
+        Path("yolov8n.pt"),
+        Path("../yolov8n.pt"),
         Path("ml/weights/vision/yolov8n.pt"),
         Path("../ml/weights/vision/yolov8n.pt"),
     ]
@@ -118,6 +121,12 @@ def create_app() -> FastAPI:
         version=settings.VERSION,
         description="TrackChain Integrated Track Monitoring & Edge AI Backend API",
     )
+
+    @_application.on_event("startup")
+    async def on_startup():
+        import asyncio
+        from src.services.alerts import set_main_event_loop
+        set_main_event_loop(asyncio.get_running_loop())
 
     # --- Middleware (order matters: last added = first executed) ---
 
@@ -222,9 +231,8 @@ def create_app() -> FastAPI:
         return {"status": "warm", "timestamp": time.time(), "service": "trackchain-backend"}
 
     # --- Process-frame endpoint ---
-    @_application.post("/process-frame", tags=["Frame Processing"])
-    async def process_frame(req: Any):
-        from src.schemas.telemetry import ProcessFrameResponse, LineGeometry
+    @_application.post("/process-frame", tags=["Frame Processing"], response_model=ProcessFrameResponse)
+    async def process_frame(req: ProcessFrameRequest):
         return _process_frame_logic(req, LineGeometry, ProcessFrameResponse)
 
     return _application

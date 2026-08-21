@@ -429,6 +429,7 @@ export interface PerformanceMetrics {
   composite_score: number;
   composite_grade: "A" | "B" | "C" | "D" | "F";
   node_summaries: NodePerformanceSummary[];
+  recent_traces?: PipelineTrace[];
 }
 
 // ============================================================================

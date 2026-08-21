@@ -39,9 +39,9 @@ export function useRoutedData<T>({
   const query = useQuery<T, Error>({
     queryKey: ["app_data", mode, ...queryKey],
     queryFn: fetchReal,
-    enabled: enabled,
+    enabled: enabled && !isDemo,
     staleTime,
-    refetchInterval,
+    refetchInterval: !isDemo ? refetchInterval : undefined,
     retry: 1,
     retryDelay: 1000,
   });
@@ -54,13 +54,13 @@ export function useRoutedData<T>({
     }
   }, [isDemo, query.isError, query.isSuccess, setConnectionState]);
 
-  const activeData = query.data !== undefined ? query.data : resolvedDemoData;
+  const activeData = isDemo ? resolvedDemoData : query.data;
 
   return {
-    data: activeData,
-    isLoading: query.isLoading && activeData === undefined,
+    data: activeData as T,
+    isLoading: !isDemo && query.isLoading,
     isError: !isDemo && query.isError,
-    error: query.error,
+    error: !isDemo ? query.error : null,
     isDemo,
     refetch: query.refetch,
   };

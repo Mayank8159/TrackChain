@@ -23,6 +23,8 @@ import {
 import { useTelemetry } from "@/hooks/useTelemetry";
 import { useDefects } from "@/hooks/useDefects";
 import { usePlaybackSync } from "@/hooks/usePlaybackSync";
+import { useModeStore } from "@/stores/mode-store";
+import { DataError } from "@/components/ui/DataError";
 import { MOCK_TELEMETRY_SERIES, MOCK_DEFECTS } from "@/lib/mock-provider";
 import { projectTelemetryTo3D, type Projected3DTrack } from "@/lib/track-3d-math";
 import type { CameraMode } from "@/components/digital-twin/CameraController";
@@ -42,8 +44,12 @@ const Scene3D = dynamic(
 );
 
 export default function DigitalTwinPage() {
-  const { data: rawTelemetry = MOCK_TELEMETRY_SERIES } = useTelemetry("ses-delhi-agra-001");
-  const { defects = MOCK_DEFECTS } = useDefects();
+  const { mode } = useModeStore();
+  const { data: telemetryData = [], isDemoData, isError, refetch } = useTelemetry("ses-delhi-agra-001");
+  const { defects: defectsData = [] } = useDefects();
+
+  const rawTelemetry = isDemoData && telemetryData.length === 0 ? MOCK_TELEMETRY_SERIES : telemetryData;
+  const defects = isDemoData && defectsData.length === 0 ? MOCK_DEFECTS : defectsData;
 
   // 3D & Playback Controls State
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");

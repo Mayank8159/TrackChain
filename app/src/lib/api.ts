@@ -373,6 +373,27 @@ class SecureApiClient {
     return this.normalizeDefect(raw);
   }
 
+  public async updateDefect(
+    id: string,
+    update: { status?: string; severity?: string; notes?: string; acknowledged_by?: string }
+  ): Promise<DefectEvent> {
+    const raw = await this.request<any>(`/api/defects/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(update),
+    });
+    return this.normalizeDefect(raw);
+  }
+
+  public async acknowledgeDefect(
+    id: string,
+    operator = "Chief Track Inspector"
+  ): Promise<DefectEvent> {
+    return this.updateDefect(id, {
+      status: "acknowledged",
+      acknowledged_by: operator,
+    });
+  }
+
   // --- Inspection Sessions ---
   public async getSessions(): Promise<MonitoringSession[]> {
     const raw = await this.request<any[]>("/api/sessions");

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Header, Request
 from sqlalchemy.orm import Session
 from src.api.deps import get_db_session
 from src.db.models import DefectEvent, MonitoringSession, MLSignal
-from src.schemas.defects import DefectCreate, DefectResponse
+from src.schemas.defects import DefectCreate, DefectResponse, DefectEventUpdate
 from src.services.alerts import dispatch_defect_alert
 from src.services.idempotency import check_idempotency, record_idempotency
 from src.services.rate_limiter import check_device_rate
@@ -298,3 +298,54 @@ def get_defect_by_id(
     if not defect:
         raise HTTPException(status_code=404, detail="Defect not found")
     return defect
+
+
+@router.patch("/{defect_id}", response_model=DefectResponse)
+@router.put("/{defect_id}", response_model=DefectResponse)
+def update_defect(
+    defect_id: str,
+    payload: DefectEventUpdate,
+    request: Request,
+    db: Session = Depends(get_db_session),
+):
+    """Update defect status, acknowledge an incident, or attach inspector notes."""
+    defect = db.query(DefectEvent).filter(DefectEvent.id == defect_id).first()
+    if not defect:
+        raise HTTPException(status_code=404, detail="Defect not found")
+
+    from datetime import datetime, timezone
+
+    if payload.status is not None:
+        defect.status = payload.status
+        if payload.status == "acknowledged":
+            defect.acknowledged_at = datetime.now(timezone.utc)
+            defect.acknowledged_by = payload.acknowledged_by or "Chief Track Inspector"
+        elif payload.status == "resolved":
+            defect.resolved_at = datetime.now(timezone.utc)
+
+    if payload.severity is not None:
+        defect.severity = payload.severity
+    if payload.notes is not None:
+        defect.notes = payload.notes
+    if payload.acknowledged_by is not None:
+        defect.acknowledged_by = payload.acknowledged_by
+        if not defect.acknowledged_at:
+            defect.acknowledged_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(defect)
+
+    # Log audit event
+    AuditService.log_sync(
+        actor_type="user",
+        actor_id=payload.acknowledged_by or "inspector",
+        action="defect.updated",
+        resource_type="defect",
+        resource_id=defect.id,
+        details={"status": defect.status, "severity": defect.severity},
+        ip_address=request.client.host if request.client else None,
+        db=db,
+    )
+
+    return defect
+

@@ -15,6 +15,9 @@ import { Select } from "@/components/ui/Select";
 import { HorizonChart } from "@/components/forecast/HorizonChart";
 import { InterventionSimulator, applyIntervention } from "@/components/forecast/InterventionSimulator";
 import { SurvivalSidebar } from "@/components/forecast/SurvivalSidebar";
+import { useModeStore } from "@/stores/mode-store";
+import { useSessions } from "@/hooks/useSessions";
+import { useDefects } from "@/hooks/useDefects";
 import { MOCK_TRACK_SEGMENTS, computeSurvivalProbs, findBreachDay } from "@/lib/mock-provider";
 import { RDSO_LIMITS, type TrackClass } from "@/lib/rdso-thresholds";
 
@@ -29,12 +32,56 @@ const CLASS_LABELS: Record<TrackClass, string> = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ForecastPage() {
+  const { mode } = useModeStore();
+  const { data: realSessions = [] } = useSessions();
+  const { defects = [] } = useDefects();
+
+  const availableSegments = useMemo(() => {
+    if (mode !== "REAL" || realSessions.length === 0) {
+      return MOCK_TRACK_SEGMENTS;
+    }
+    return realSessions.map((s, idx) => {
+      const sessionDefects = defects.filter((d) => d.sessionId === s.id);
+      const criticalCount = sessionDefects.filter((d) => d.severity === "critical").length;
+      const currentTqi = Math.max(62.0, Math.min(96.0, 92.0 - sessionDefects.length * 3.0 - criticalCount * 5.0));
+      const mockTemplate = MOCK_TRACK_SEGMENTS[idx % MOCK_TRACK_SEGMENTS.length];
+
+      const forecast = mockTemplate.forecast.map((pt) => {
+        if (pt.day <= 0) {
+          const delta = pt.day * 0.05;
+          return { ...pt, tqi_actual: Math.max(50, Math.min(100, currentTqi - delta)) };
+        } else {
+          const deg = pt.day * (0.12 + criticalCount * 0.05);
+          const predicted = Math.max(45, currentTqi - deg);
+          return {
+            ...pt,
+            tqi_predicted: predicted,
+            lower_bound_95: Math.max(35, predicted - 4.5),
+            upper_bound_95: Math.min(100, predicted + 4.5),
+            lower_bound_80: Math.max(38, predicted - 2.8),
+            upper_bound_80: Math.min(100, predicted + 2.8),
+          };
+        }
+      });
+
+      return {
+        id: s.id,
+        label: `${s.trackSection || s.name || s.id}`,
+        trackClass: (idx === 0 ? "CLASS_A" : idx === 1 ? "CLASS_B" : "CLASS_C") as TrackClass,
+        currentTqi,
+        breachDayEstimate: findBreachDay(forecast, 70),
+        survivalProbs: computeSurvivalProbs(forecast, 70),
+        forecast,
+      };
+    });
+  }, [mode, realSessions, defects]);
+
   // Segment selector
-  const [selectedSegmentId, setSelectedSegmentId] = useState(MOCK_TRACK_SEGMENTS[0].id);
+  const [selectedSegmentId, setSelectedSegmentId] = useState(availableSegments[0]?.id || "seg-01");
 
   // Track class override (user can change from segment default)
   const [trackClass, setTrackClass] = useState<TrackClass>(
-    MOCK_TRACK_SEGMENTS[0].trackClass
+    availableSegments[0]?.trackClass || "CLASS_A"
   );
 
   // What-If intervention state
@@ -43,8 +90,8 @@ export default function ForecastPage() {
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const baseSegment = useMemo(
-    () => MOCK_TRACK_SEGMENTS.find((s) => s.id === selectedSegmentId) ?? MOCK_TRACK_SEGMENTS[0],
-    [selectedSegmentId]
+    () => availableSegments.find((s) => s.id === selectedSegmentId) ?? availableSegments[0] ?? MOCK_TRACK_SEGMENTS[0],
+    [availableSegments, selectedSegmentId]
   );
 
   const rdsoLimit = RDSO_LIMITS[trackClass];
@@ -112,7 +159,7 @@ export default function ForecastPage() {
               onChange={(e) => handleSegmentChange(e.target.value)}
               icon={<Cpu size={13} strokeWidth={1.5} />}
             >
-              {MOCK_TRACK_SEGMENTS.map((s) => (
+              {availableSegments.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
                 </option>
