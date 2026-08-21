@@ -328,8 +328,8 @@ def train_enhanced_bilstm(args):
     print(f"  Best epoch: {best_epoch}")
     print(f"  Best val accuracy: {best_val_acc:.2f}%")
 
-    # Calibrate with temperature scaling
-    print(f"\n[5/7] Calibrating with temperature scaling...")
+    # Calibrate with SOTA Vector Scaling & Temperature Scaling
+    print(f"\n[5/7] Calibrating with SOTA Vector Scaling (ECE optimization)...")
 
     if Path(args.save_path).exists():
         model.load_state_dict(torch.load(args.save_path, map_location=device))
@@ -353,7 +353,7 @@ def train_enhanced_bilstm(args):
         val_logits = np.random.randn(50, n_classes)
         val_labels = np.random.randint(0, n_classes, 50)
 
-    # Fit temperature
+    # 1. Scalar Temperature Baseline
     from scipy.optimize import minimize
 
     def nll_with_temperature(T):
@@ -366,33 +366,22 @@ def train_enhanced_bilstm(args):
     result = minimize(nll_with_temperature, x0=[1.5], bounds=[(0.1, 10.0)])
     optimal_temperature = float(result.x[0])
 
-    print(f"  Optimal temperature: {optimal_temperature:.3f}")
+    # 2. SOTA Vector Scaling (per-class weights W and biases b via L-BFGS)
+    from ml.calibration.temperature import VectorScaler
+    vector_scaler = VectorScaler(num_classes=n_classes)
+    vs_res = vector_scaler.fit(val_logits, val_labels, lr=0.01, max_iter=100)
+    ece_vector = vs_res["ece"]
 
-    # Compute ECE (Expected Calibration Error)
-    scaled_logits = val_logits / optimal_temperature
-    probs = np.exp(scaled_logits - np.max(scaled_logits, axis=1, keepdims=True))
-    probs = probs / probs.sum(axis=1, keepdims=True)
-    confidences = probs.max(axis=1)
-    predictions = probs.argmax(axis=1)
-    accuracies = (predictions == val_labels).astype(float)
+    print(f"  Scalar Temperature:    {optimal_temperature:.3f}")
+    print(f"  Vector Scaling ECE:    {ece_vector:.4f} (per-class weights + biases)")
 
-    # Bin predictions
-    n_bins = 10
-    bin_boundaries = np.linspace(0, 1, n_bins + 1)
-    ece = 0.0
-    for i in range(n_bins):
-        mask = (confidences > bin_boundaries[i]) & (confidences <= bin_boundaries[i + 1])
-        if mask.sum() > 0:
-            bin_acc = accuracies[mask].mean()
-            bin_conf = confidences[mask].mean()
-            ece += mask.sum() / len(confidences) * abs(bin_acc - bin_conf)
-
-    print(f"  ECE after calibration: {ece:.4f}")
-
-    # Save calibration
+    # Save calibration manifest
     calibration = {
         'temperature': float(optimal_temperature),
-        'ece': float(ece),
+        'ece': float(ece_vector),
+        'method': 'vector_scaling',
+        'weights': vs_res["weights"],
+        'biases': vs_res["biases"],
         'model': 'bilstm_geometry_typing',
         'val_samples': len(val_labels),
         'best_val_acc': float(best_val_acc),

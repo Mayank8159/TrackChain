@@ -300,6 +300,7 @@ class EnhancedSequenceVAE(nn.Module):
         """
         Fit the latent distribution from normal sequences.
         Used for Mahalanobis distance scoring.
+        Device-agnostic execution with numerical epsilon covariance stabilization.
         """
         self.eval()
         if isinstance(normal_sequences, np.ndarray):
@@ -307,30 +308,30 @@ class EnhancedSequenceVAE(nn.Module):
         if normal_sequences.dim() == 2:
             normal_sequences = normal_sequences.unsqueeze(0)
 
+        # Dynamically detect model device
+        device = next(self.parameters()).device
         latents = []
 
         with torch.no_grad():
             for i in range(0, len(normal_sequences), 64):
-                batch = normal_sequences[i:i + 64]
+                batch = normal_sequences[i:i + 64].to(device)
                 mu, _ = self.encoder(batch)
                 latents.append(mu.cpu())
 
         latents_arr = torch.cat(latents, dim=0).numpy()
 
-        # Compute mean and inverse covariance
+        # Compute mean and inverse covariance with epsilon stabilization
         self.latent_mean = np.mean(latents_arr, axis=0)
         cov = np.cov(latents_arr.T)
         if cov.ndim == 0:
             cov = np.array([[cov]])
-        cov_reg = cov + np.eye(latents_arr.shape[1]) * 1e-6
+        cov_reg = cov + np.eye(latents_arr.shape[1]) * 1e-5
         self.latent_cov_inv = np.linalg.inv(cov_reg)
 
-    def compute_anomaly_score(self, sequence: torch.Tensor) -> Dict[str, float]:
+    def compute_anomaly_score(self, sequence: Union[torch.Tensor, np.ndarray]) -> Dict[str, float]:
         """
-        Compute dual-path anomaly score.
-
-        Path 1: Reconstruction error
-        Path 2: Mahalanobis distance in latent space
+        Compute dual-path anomaly score (reconstruction + Mahalanobis).
+        Device-agnostic execution.
 
         Args:
             sequence: (seq_len, n_features) or (batch, seq_len, n_features)
@@ -339,9 +340,13 @@ class EnhancedSequenceVAE(nn.Module):
             Dictionary with scores
         """
         self.eval()
-
+        if isinstance(sequence, np.ndarray):
+            sequence = torch.tensor(sequence, dtype=torch.float32)
         if sequence.dim() == 2:
             sequence = sequence.unsqueeze(0)
+
+        device = next(self.parameters()).device
+        sequence = sequence.to(device)
 
         with torch.no_grad():
             recon_x, mu, logvar = self.forward(sequence)
@@ -358,10 +363,56 @@ class EnhancedSequenceVAE(nn.Module):
             else:
                 mahalanobis_dist = recon_error  # Fallback
 
+            return {
+                'recon_error': recon_error,
+                'mahalanobis_dist': mahalanobis_dist,
+                'combined_score': 0.7 * recon_error + 0.3 * mahalanobis_dist,
+            }
+
+    @staticmethod
+    def fit_evt_threshold(normal_errors: Union[List[float], np.ndarray], target_fpr: float = 0.01) -> Dict[str, float]:
+        """
+        Fit Extreme Value Theory (EVT) Peaks-Over-Threshold (POT) using Generalized Pareto Distribution (GPD).
+        Mathematically models the tail of normal geometry error distribution.
+        """
+        from scipy.stats import genpareto
+        errors_arr = np.asarray(normal_errors, dtype=np.float64)
+        n_total = len(errors_arr)
+        if n_total < 20:
+            p99 = float(np.percentile(errors_arr, 99)) if n_total > 0 else 1.0
+            return {"threshold": p99, "shape": 0.0, "scale": 1.0, "init_threshold": p99}
+
+        # 1. Take top 10% (P90) as extreme tail
+        threshold_init = float(np.percentile(errors_arr, 90.0))
+        tail_excess = errors_arr[errors_arr > threshold_init] - threshold_init
+
+        if len(tail_excess) < 5 or np.all(tail_excess == 0):
+            p99 = float(np.percentile(errors_arr, 99.0))
+            return {"threshold": p99, "shape": 0.0, "scale": 1.0, "init_threshold": threshold_init}
+
+        # 2. Fit Generalized Pareto Distribution (GPD) to the tail
+        try:
+            shape, loc, scale = genpareto.fit(tail_excess, floc=0)
+            n_tail = len(tail_excess)
+            prob_excess = n_tail / n_total
+
+            # 3. Calculate exact EVT quantile for target_fpr
+            if abs(shape) < 1e-4:  # Exponential limit
+                evt_threshold = threshold_init - scale * np.log(target_fpr / prob_excess)
+            else:
+                term = (target_fpr / prob_excess) ** (-shape) - 1.0
+                evt_threshold = threshold_init + (scale / shape) * term
+
+            evt_threshold = float(np.clip(evt_threshold, threshold_init, None))
+        except Exception:
+            evt_threshold = float(np.percentile(errors_arr, 99.0))
+            shape, scale = 0.0, 1.0
+
         return {
-            'recon_error': recon_error,
-            'mahalanobis_dist': mahalanobis_dist,
-            'ensemble': 0.7 * recon_error + 0.3 * mahalanobis_dist,  # Weighted ensemble
+            "threshold": evt_threshold,
+            "shape": float(shape),
+            "scale": float(scale),
+            "init_threshold": float(threshold_init),
         }
 
 

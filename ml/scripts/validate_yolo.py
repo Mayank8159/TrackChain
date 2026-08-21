@@ -169,6 +169,30 @@ def validate_model(
         except Exception as e:
             print(f"      [WARN] PR curve plotting skipped: {e}")
 
+    # Test-Time Augmentation (TTA) optional evaluation
+    tta_metrics = {}
+    if tta:
+        print(f"\n[INFO] Running Test-Time Augmentation (TTA) evaluation on {split} split...")
+        try:
+            tta_results = model.val(
+                data=str(abs_data),
+                split=split,
+                conf=conf,
+                iou=iou,
+                imgsz=imgsz,
+                device=device,
+                augment=True,
+                verbose=False,
+            )
+            tta_metrics = {
+                'mAP50_tta': float(tta_results.box.map50),
+                'mAP50_95_tta': float(tta_results.box.map),
+                'precision_tta': float(tta_results.box.mp),
+                'recall_tta': float(tta_results.box.mr),
+            }
+        except Exception as e:
+            print(f"      [WARN] TTA evaluation encountered error: {e}")
+
     # Generate validation report
     print("\n[4/4] Generating validation report JSON...")
     num_params = sum(p.numel() for p in model.model.parameters()) if model.model else 0
@@ -179,6 +203,7 @@ def validate_model(
         'data_yaml': str(abs_data),
         'split': split,
         'overall_metrics': metrics,
+        'tta_metrics': tta_metrics,
         'class_metrics': class_metrics,
         'num_parameters': num_params,
         'model_size_mb': round(file_size_mb, 2),
@@ -190,15 +215,18 @@ def validate_model(
 
     # Print summary table
     print("\n" + "=" * 75)
-    print(f"Validation Results Summary (conf={conf}, iou={iou})")
+    print(f"Validation Results Summary (conf={conf}, iou={iou}, imgsz={imgsz})")
     print("=" * 75)
-    print(f"mAP50:       {metrics['mAP50']:.4f}")
-    print(f"mAP50-95:    {metrics['mAP50_95']:.4f}")
-    print(f"Precision:   {metrics['precision']:.4f}")
-    print(f"Recall:      {metrics['recall']:.4f}")
-    print(f"F1 Score:    {metrics['f1_score']:.4f}")
-    print(f"Model Size:  {report['model_size_mb']:.2f} MB")
-    print(f"Parameters:  {report['num_parameters']:,}")
+    print(f"Standard mAP50:     {metrics['mAP50']:.4f}")
+    print(f"Standard mAP50-95:  {metrics['mAP50_95']:.4f}")
+    if tta_metrics:
+        print(f"TTA mAP50:          {tta_metrics.get('mAP50_tta', 0.0):.4f} (Δ={tta_metrics.get('mAP50_tta', 0.0) - metrics['mAP50']:+.4f})")
+        print(f"TTA mAP50-95:       {tta_metrics.get('mAP50_95_tta', 0.0):.4f} (Δ={tta_metrics.get('mAP50_95_tta', 0.0) - metrics['mAP50_95']:+.4f})")
+    print(f"Precision:          {metrics['precision']:.4f}")
+    print(f"Recall:             {metrics['recall']:.4f}")
+    print(f"F1 Score:           {metrics['f1_score']:.4f}")
+    print(f"Model Size:         {report['model_size_mb']:.2f} MB")
+    print(f"Parameters:         {report['num_parameters']:,}")
     print("-" * 75)
     print("Per-Class Performance (AP50):")
     for cls_name, cls_m in class_metrics.items():
@@ -221,6 +249,7 @@ if __name__ == "__main__":
     parser.add_argument('--iou', type=float, default=0.60, help="IoU threshold (default 0.60)")
     parser.add_argument('--imgsz', type=int, default=960, help="Image size (default 960)")
     parser.add_argument('--device', default='cpu')
+    parser.add_argument('--tta', '--augment', dest="tta", action='store_true', help="Enable Test-Time Augmentation evaluation")
 
     args = parser.parse_args()
 
@@ -233,4 +262,5 @@ if __name__ == "__main__":
         iou=args.iou,
         imgsz=args.imgsz,
         device=args.device,
+        tta=args.tta,
     )

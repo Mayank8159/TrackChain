@@ -1,6 +1,7 @@
 """
 ml/calibration/unified_calibrator.py
 Central Unified Calibration Manager for all TrackChain vision and geometry models (tc.v1 SOTA).
+Synchronizes all 5 model outputs into the unified [0.0, 1.0] probability space.
 """
 
 import json
@@ -9,8 +10,8 @@ from typing import Dict, Any, List, Optional, Union
 import numpy as np
 
 from ml.core.schema import CalibratedSignal, SignalType
-from ml.calibration.temperature import TemperatureScaler
-from ml.calibration.patchcore_scale import SigmoidDistanceCalibrator
+from ml.calibration.temperature import TemperatureScaler, VectorScaler
+from ml.calibration.patchcore_scale import SigmoidDistanceCalibrator, WeibullDistanceCalibrator
 from ml.calibration.fpr_threshold import FPRThresholdCalibrator
 
 
@@ -18,10 +19,10 @@ class UnifiedCalibrator:
     """
     Coordinates and executes calibration transforms across all models:
       - YOLOv8 (Temperature Scaling)
-      - PatchCore (Sigmoid Distance P99)
+      - PatchCore (Weibull CDF / Sigmoid Distance P99)
       - EN 13848 Physics (Deterministic Exceedance Ratio)
-      - Bi-LSTM (Temperature Scaling)
-      - Sequence VAE (Sigmoid Dual-Path Anomaly Distance)
+      - Bi-LSTM (Vector Scaling / Temperature Scaling)
+      - Sequence VAE (Extreme Value Theory EVT / P99 Dual-Path)
     """
 
     def __init__(self):
@@ -50,9 +51,11 @@ class UnifiedCalibrator:
     def calibrate_all(self, signals: List[CalibratedSignal]) -> List[CalibratedSignal]:
         """Iterates over a list of signals and updates calibrated probabilities."""
         for sig in signals:
-            if sig.stream_name in self.calibrators:
-                sig.calibrated_prob = self.calibrate(sig.stream_name, sig.raw_score)
-                sig.is_anomaly = bool(sig.calibrated_prob >= sig.threshold)
+            stream_key = getattr(sig, "stream_name", getattr(sig, "name", None))
+            if stream_key and stream_key in self.calibrators:
+                cal_prob = self.calibrate(stream_key, sig.raw_score if hasattr(sig, "raw_score") else sig.value)
+                sig.value = cal_prob
+                sig.fired = bool(cal_prob >= sig.threshold)
         return signals
 
     def save(self, filepath: Union[str, Path]):
@@ -66,7 +69,7 @@ class UnifiedCalibrator:
             elif hasattr(cal, "temperature"):
                 T = float(cal.temperature.item()) if hasattr(cal.temperature, "item") else float(cal.temperature)
                 manifest[name] = {"method": "temperature_scaling", "T": T}
-        with open(p, "w") as f:
+        with open(p, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
 
     @classmethod
@@ -76,7 +79,7 @@ class UnifiedCalibrator:
         p = Path(filepath)
         if not p.exists():
             return uc
-        with open(p, "r") as f:
+        with open(p, "r", encoding="utf-8") as f:
             manifest = json.load(f)
         for name, cfg in manifest.items():
             method = cfg.get("method")
@@ -85,4 +88,14 @@ class UnifiedCalibrator:
                     threshold=cfg.get("threshold_p99", 2.0),
                     steepness_k=cfg.get("steepness_k", 2.0),
                 ))
+            elif method == "weibull_cdf":
+                uc.register_model(name, WeibullDistanceCalibrator(
+                    shape_k=cfg.get("shape_k", 2.0),
+                    scale_lambda=cfg.get("scale_lambda", 20.0),
+                    p99_threshold=cfg.get("threshold_p99", 21.0),
+                ))
+            elif method == "vector_scaling":
+                uc.register_model(name, VectorScaler.from_dict(cfg))
+            elif method == "temperature_scaling":
+                uc.register_model(name, TemperatureScaler(temperature=cfg.get("T", 1.5)))
         return uc

@@ -1,8 +1,10 @@
 # Generates synthetic TRC telemetry, 5-class geometry sequences, and normal sequence datasets based on EN 13848-2 PSD (tc.v1 SOTA).
+# 🔒 Strictly locked random seeds for 100% deterministic physics math verification.
 
 import os
 import sys
 import argparse
+import random
 from pathlib import Path
 from typing import Tuple, Optional
 import numpy as np
@@ -24,7 +26,10 @@ def generate_track_profile_psd(
     Generates realistic track cant (cross-level) profile using EN 13848-2 Power Spectral Density (PSD)
     with injected deterministic geometry fault.
     """
+    # 🔒 Lock random seed for deterministic track profile
     np.random.seed(random_seed)
+    random.seed(random_seed)
+
     n_pts = int(length_m / spatial_resolution_m)
     x = np.linspace(0, length_m, n_pts)
 
@@ -61,8 +66,13 @@ def generate_trc_telemetry_csv(
     length_m: float = 1000.0,
     defect_mm: float = 5.0,
     defect_start_m: float = 500.0,
+    random_seed: int = 42,
 ) -> str:
     """Generate time-domain 100Hz IMU and Laser TRC telemetry CSV for chainage resampling."""
+    # 🔒 Lock random seed at the very top for deterministic pipeline execution
+    np.random.seed(random_seed)
+    random.seed(random_seed)
+
     p = Path(output_path)
     if p.suffix == "":
         p = p / "synthetic_trc_run_001.csv"
@@ -78,6 +88,7 @@ def generate_trc_telemetry_csv(
         spatial_resolution_m=0.05,
         defect_mm=defect_mm,
         defect_start_m=defect_start_m,
+        random_seed=random_seed,
     )
 
     track_x = np.linspace(0, length_m, len(cant_profile_mm))
@@ -87,7 +98,6 @@ def generate_trc_telemetry_csv(
     nominal_gauge_mm = 1676.0
     roll_rad = np.arcsin(np.clip(cant_sampled_mm / nominal_gauge_mm, -0.2, 0.2))
 
-    np.random.seed(42)
     lat_accel_g = np.random.normal(0.0, 0.01, n_samples)
     vert_accel_g = np.random.normal(1.0, 0.02, n_samples)
     gauge_mm = np.random.normal(nominal_gauge_mm, 0.4, n_samples)
@@ -106,7 +116,7 @@ def generate_trc_telemetry_csv(
     })
 
     df.to_csv(p, index=False)
-    print(f"[OK] Generated synthetic TRC telemetry CSV: {p}")
+    print(f"[OK] Generated deterministic synthetic TRC telemetry CSV: {p}")
     return str(p)
 
 
@@ -115,9 +125,14 @@ def generate_normal_sequences_csv(
     num_sequences: int = 1000,
     seq_len: int = 80,
     step_m: float = 0.25,
+    random_seed: int = 42,
 ) -> str:
     """Generate clean normal EN 13848 track geometry sequences for Sequence VAE training."""
     from ml.data.synthetic_geometry import SyntheticGeometryDataset, GeometryFaultType
+
+    # 🔒 Lock random seed
+    np.random.seed(random_seed)
+    random.seed(random_seed)
 
     p = Path(output_path)
     if p.suffix == "":
@@ -129,7 +144,7 @@ def generate_normal_sequences_csv(
         seq_len=seq_len,
         bin_size=step_m,
         num_classes=5,
-        random_seed=42,
+        random_seed=random_seed,
     )
     normal_mask = (ds.labels == GeometryFaultType.NORMAL)
     normal_data = ds.data[normal_mask][:num_sequences].numpy()  # [N, 80, 5]
@@ -159,9 +174,14 @@ def generate_geometry_sequences_dataset(
     num_sequences: int = 5000,
     seq_len: int = 80,
     step_m: float = 0.25,
+    random_seed: int = 42,
 ) -> str:
     """Generate multi-class synthetic geometry sequences for Bi-LSTM classifier training."""
     from ml.data.synthetic_geometry import SyntheticGeometryDataset
+
+    # 🔒 Lock random seed
+    np.random.seed(random_seed)
+    random.seed(random_seed)
 
     p = Path(output_path)
     if p.suffix == "":
@@ -178,7 +198,7 @@ def generate_geometry_sequences_dataset(
         seq_len=seq_len,
         bin_size=step_m,
         num_classes=6,
-        random_seed=42,
+        random_seed=random_seed,
     )
 
     data_arr = ds.data.numpy()      # [N, 80, 5]
@@ -210,21 +230,22 @@ def generate_geometry_sequences_dataset(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate synthetic EN 13848 TRC telemetry / datasets.")
+    parser = argparse.ArgumentParser(description="Generate synthetic EN 13848 TRC telemetry / datasets (Deterministic).")
     parser.add_argument("--mode", choices=["telemetry", "normal_sequences", "geometry_sequences"], default="telemetry")
     parser.add_argument("--out", "--output", default=None, dest="output", help="Output path")
     parser.add_argument("--length", type=float, default=1000.0, help="Track length in meters")
     parser.add_argument("--defect", type=float, default=5.0, help="Injected twist defect in mm")
     parser.add_argument("--defect-pos", type=float, default=500.0, help="Defect start chainage in meters")
     parser.add_argument("--num_samples", "--num-samples", "--num-sequences", "--num_sequences", type=int, default=1000, dest="num_samples", help="Number of sequences")
+    parser.add_argument("--seed", type=int, default=42, help="Fixed random seed for deterministic reproducibility")
     args = parser.parse_args()
 
     if args.mode == "normal_sequences":
         out_path = args.output or "data/processed/normal_sequences.csv"
-        generate_normal_sequences_csv(output_path=out_path, num_sequences=args.num_samples)
+        generate_normal_sequences_csv(output_path=out_path, num_sequences=args.num_samples, random_seed=args.seed)
     elif args.mode == "geometry_sequences":
         out_path = args.output or "data/processed/geometry_sequences/"
-        generate_geometry_sequences_dataset(output_path=out_path, num_sequences=args.num_samples)
+        generate_geometry_sequences_dataset(output_path=out_path, num_sequences=args.num_samples, random_seed=args.seed)
     else:
         out_path = args.output or "data/processed/synthetic_trc_run_001.csv"
         generate_trc_telemetry_csv(
@@ -232,4 +253,5 @@ if __name__ == "__main__":
             length_m=args.length,
             defect_mm=args.defect,
             defect_start_m=args.defect_pos,
+            random_seed=args.seed,
         )

@@ -123,14 +123,19 @@ class GeometryFaultClassifier:
 
         self.model.eval()
         self.temperature = 1.5
+        self.vector_weights: Optional[np.ndarray] = None
+        self.vector_biases: Optional[np.ndarray] = None
 
-        # Check calibration files for calibrated temperature
+        # Check calibration files for calibrated vector scaling or temperature
         for cal_p in ["artifacts/calibration/bilstm_temp.json", "artifacts/calibration/params.json"]:
             if os.path.exists(cal_p):
                 try:
                     import json
                     with open(cal_p, "r", encoding="utf-8") as f:
                         cal_data = json.load(f)
+                    if "weights" in cal_data and "biases" in cal_data:
+                        self.vector_weights = np.asarray(cal_data["weights"], dtype=np.float32)
+                        self.vector_biases = np.asarray(cal_data["biases"], dtype=np.float32)
                     if "temperature" in cal_data:
                         self.temperature = float(cal_data["temperature"])
                         break
@@ -184,12 +189,18 @@ class GeometryFaultClassifier:
         with torch.no_grad():
             tensor_in = self._format_input(geometry_window)
             logits, attn_weights = self.model(tensor_in)
+            logits_np = logits.cpu().numpy()[0]
 
-            # Apply temperature scaling for calibration
-            scaled_logits = logits / self.temperature
-            probs = F.softmax(scaled_logits, dim=1).cpu().numpy()[0]
+            # Apply SOTA Vector Scaling (or fallback temperature scaling)
+            if self.vector_weights is not None and self.vector_biases is not None:
+                scaled_logits_np = logits_np * self.vector_weights + self.vector_biases
+                exp_logits = np.exp(scaled_logits_np - np.max(scaled_logits_np))
+                probs = exp_logits / np.sum(exp_logits)
+            else:
+                scaled_logits = logits / max(1e-4, self.temperature)
+                probs = F.softmax(scaled_logits, dim=1).cpu().numpy()[0]
+
             attn = attn_weights.cpu().numpy()[0]
-
             pred_idx = int(np.argmax(probs))
             confidence = float(probs[pred_idx])
             raw_confidence = float(F.softmax(logits, dim=1).cpu().numpy()[0, pred_idx])

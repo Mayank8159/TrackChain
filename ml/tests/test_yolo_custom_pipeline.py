@@ -16,7 +16,7 @@ repo_root = Path(__file__).resolve().parent.parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from ml.scripts.expand_yolo_dataset import (
+from ml.scripts.expand_datasets import (
     sanitize_bbox,
     create_railway_augmentation_pipeline,
     augment_sample,

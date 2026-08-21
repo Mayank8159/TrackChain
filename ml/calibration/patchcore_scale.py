@@ -1,4 +1,5 @@
-# Sigmoid threshold calibration for PatchCore nearest-neighbor L2 distances (tc.v1 SOTA).
+# Sigmoid and Weibull threshold calibration for PatchCore nearest-neighbor L2 distances (tc.v1 SOTA).
+# SOTA: Implements Weibull Extreme Value Distribution CDF to model high-dimensional L2 distance tails.
 
 import json
 import os
@@ -44,9 +45,7 @@ class SigmoidDistanceCalibrator:
     def scale(self, distance: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         """Convert raw L2 distance to [0.0, 1.0] calibrated anomaly score."""
         d = np.asarray(distance, dtype=np.float64)
-        # Sigmoid: 1 / (1 + exp(-k * (d - T)))
         z = -self.steepness_k * (d - self.threshold)
-        # Clip z to avoid numerical overflow in exp
         z_clipped = np.clip(z, -60.0, 60.0)
         score = 1.0 / (1.0 + np.exp(z_clipped))
 
@@ -68,7 +67,7 @@ class SigmoidDistanceCalibrator:
         """Save calibration parameters to JSON."""
         p = Path(filepath)
         p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "w") as f:
+        with open(p, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
 
     @classmethod
@@ -77,12 +76,86 @@ class SigmoidDistanceCalibrator:
         p = Path(filepath)
         if not p.exists():
             return cls()
-        with open(p, "r") as f:
+        with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
         cal = cls(
             threshold=data.get("threshold_p99", 10.0),
             steepness_k=data.get("steepness_k", 0.5),
             percentile=data.get("percentile", 99.0),
+        )
+        cal.is_fitted = data.get("is_fitted", True)
+        return cal
+
+
+class WeibullDistanceCalibrator:
+    """
+    SOTA Weibull Extreme Value Distribution CDF Calibrator.
+    Maps high-dimensional (1536-d) PatchCore L2 distances into [0.0, 1.0] probability space:
+        Score = 1.0 - exp(-(d / lambda)^k)
+    Where:
+        d = raw L2 distance
+        lambda = Weibull scale parameter
+        k = Weibull shape parameter
+    """
+
+    def __init__(self, shape_k: float = 2.0, scale_lambda: float = 20.0, p99_threshold: float = 21.0):
+        self.shape_k = float(shape_k)
+        self.scale_lambda = float(scale_lambda)
+        self.p99_threshold = float(p99_threshold)
+        self.is_fitted = False
+
+    def fit(self, normal_distances: Union[List[float], np.ndarray]) -> Dict[str, float]:
+        from scipy.stats import weibull_min
+        arr = np.asarray(normal_distances, dtype=np.float64)
+        if len(arr) == 0:
+            raise ValueError("Cannot fit calibrator on empty distance array.")
+
+        try:
+            shape, loc, scale = weibull_min.fit(arr, floc=0)
+            self.shape_k = float(shape)
+            self.scale_lambda = float(scale)
+        except Exception:
+            self.shape_k = 2.0
+            self.scale_lambda = float(np.mean(arr))
+
+        self.p99_threshold = float(np.percentile(arr, 99.0))
+        self.is_fitted = True
+        return {"shape_k": self.shape_k, "scale_lambda": self.scale_lambda, "p99_threshold": self.p99_threshold}
+
+    def scale(self, distance: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        d = np.asarray(distance, dtype=np.float64)
+        z = np.power(np.clip(d / (self.scale_lambda + 1e-8), 0.0, 100.0), self.shape_k)
+        score = 1.0 - np.exp(-np.clip(z, 0.0, 60.0))
+        if np.ndim(distance) == 0:
+            return float(score)
+        return score
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "method": "weibull_cdf",
+            "shape_k": self.shape_k,
+            "scale_lambda": self.scale_lambda,
+            "threshold_p99": self.p99_threshold,
+            "is_fitted": self.is_fitted,
+        }
+
+    def save(self, filepath: Union[str, Path]):
+        p = Path(filepath)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def load(cls, filepath: Union[str, Path]) -> "WeibullDistanceCalibrator":
+        p = Path(filepath)
+        if not p.exists():
+            return cls()
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        cal = cls(
+            shape_k=data.get("shape_k", 2.0),
+            scale_lambda=data.get("scale_lambda", 20.0),
+            p99_threshold=data.get("threshold_p99", 21.0),
         )
         cal.is_fitted = data.get("is_fitted", True)
         return cal

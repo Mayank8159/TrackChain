@@ -325,15 +325,15 @@ def train_enhanced_vae(args):
         model.load_state_dict(torch.load(args.save_path, map_location=device))
     model.eval()
 
-    # Use validation sequences for fitting
+    # Use validation sequences for fitting (model handles device mapping internally)
     val_tensor = torch.tensor(val_sequences, dtype=torch.float32)
     model.fit_latent_distribution(val_tensor)
 
     print(f"  Latent mean shape: {model.latent_mean.shape}")
     print(f"  Latent covariance inverse shape: {model.latent_cov_inv.shape}")
 
-    # Calibrate thresholds
-    print(f"\n[6/6] Calibrating anomaly thresholds...")
+    # Calibrate thresholds with Extreme Value Theory (EVT) and P99
+    print(f"\n[6/6] Calibrating anomaly thresholds with Extreme Value Theory (EVT)...")
 
     # Compute reconstruction errors on validation set
     val_errors = []
@@ -348,17 +348,29 @@ def train_enhanced_vae(args):
                 val_errors.append(scores.get('recon_error', 0.0))
                 val_mahalanobis.append(scores.get('mahalanobis_dist', 0.0))
 
-    # Compute P99 threshold
+    # Compute P99 thresholds
     p99_recon = float(np.percentile(val_errors, 99)) if val_errors else 1.0
     p99_mahalanobis = float(np.percentile(val_mahalanobis, 99)) if val_mahalanobis else 1.0
     ensemble_scores = [0.7 * e + 0.3 * m for e, m in zip(val_errors, val_mahalanobis)] if val_errors else [1.0]
     p99_ensemble = float(np.percentile(ensemble_scores, 99))
 
-    # Save calibration
+    # SOTA: Compute Extreme Value Theory (EVT) Peaks-Over-Threshold
+    evt_recon = model.fit_evt_threshold(val_errors, target_fpr=0.01)
+    evt_ensemble = model.fit_evt_threshold(ensemble_scores, target_fpr=0.01)
+
+    print(f"  P99 Ensemble Threshold:  {p99_ensemble:.4f}")
+    print(f"  EVT Ensemble Threshold:  {evt_ensemble['threshold']:.4f} (shape={evt_ensemble['shape']:.4f}, scale={evt_ensemble['scale']:.4f})")
+
+    # Save calibration manifest
     calibration = {
+        'threshold_evt': float(evt_ensemble['threshold']),
         'threshold_p99': float(p99_ensemble),
+        'threshold_recon_evt': float(evt_recon['threshold']),
         'threshold_recon_p99': float(p99_recon),
         'threshold_mahalanobis_p99': float(p99_mahalanobis),
+        'evt_shape': float(evt_ensemble['shape']),
+        'evt_scale': float(evt_ensemble['scale']),
+        'evt_init_threshold': float(evt_ensemble['init_threshold']),
         'steepness': 0.5,
         'target_fpr': 0.01,
         'model': 'sequence_vae_geometry_novel',
@@ -379,7 +391,8 @@ def train_enhanced_vae(args):
     legacy_calib = Path('artifacts/calibration/sequence_vae_calibration.json')
     with open(legacy_calib, 'w', encoding='utf-8') as f:
         json.dump({
-            "method": "sigmoid_threshold_scaling",
+            "method": "evt_peaks_over_threshold",
+            "threshold_evt": float(evt_ensemble['threshold']),
             "threshold_p99": float(p99_ensemble),
             "steepness_k": 0.5,
             "percentile": 99.0,

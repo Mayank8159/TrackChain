@@ -1,11 +1,10 @@
 """
 TrackChain Master PatchCore Anomaly Detector Training Pipeline (tc.v1 SOTA).
 Implements:
-- Batched multi-scale feature extraction across layer2 + layer3
-- Fast Vectorized Greedy Minimax / K-Center Core-set subsampling (O(N) memory, fast PyTorch/NumPy matrix acceleration)
-- Dimension reduction via SparseRandomProjection
-- Statistical calibration (P99 + Sigmoid fitting)
-- Defect benchmark validation (TPR, FPR, score separation)
+- Multi-scale feature extraction across Layer 2 and Layer 3 (fine cracks to macro anomalies)
+- Fast Vectorized Greedy Minimax / K-Center Core-set subsampling (O(N) memory, PyTorch matrix acceleration)
+- Statistical P99 calibration on normal track baseline
+- Explicit True Positive Rate (TPR / Recall) and False Positive Rate (FPR) benchmarking with automatic defect dataset discovery
 - Serialization to ModelRegistry checkpoints and calibration manifests
 """
 
@@ -73,7 +72,7 @@ def fast_greedy_coreset_subsampling(
     if n_samples == 0:
         return features
 
-    # 1. Pre-filter candidate pool if excessively large (preserves manifold coverage without quadratic explosion)
+    # Pre-filter candidate pool if excessively large (preserves manifold coverage without quadratic explosion)
     np.random.seed(random_seed)
     if n_samples > max_candidate_pool:
         candidate_indices = np.random.choice(n_samples, max_candidate_pool, replace=False)
@@ -98,7 +97,7 @@ def fast_greedy_coreset_subsampling(
     # Squared Euclidean distance: ||x - c||^2
     min_sq_dists = torch.sum((feat_tensor - first_center) ** 2, dim=1)
 
-    pbar = tqdm(total=target_count, desc="Minimax Coreset Selection", unit="patch")
+    pbar = tqdm(total=target_count, desc="Minimax Coreset Selection", unit="patch", leave=False)
     pbar.update(1)
 
     step = 1
@@ -121,8 +120,30 @@ def fast_greedy_coreset_subsampling(
 greedy_coreset_subsampling = fast_greedy_coreset_subsampling
 
 
+def find_defect_validation_images(abs_data_dir: Path, repo_root: Path) -> List[Path]:
+    """Search and locate defect validation images for TPR/FPR benchmark."""
+    candidate_dirs = [
+        abs_data_dir / "valid" / "defect",
+        abs_data_dir / "defect",
+        repo_root / "data" / "external" / "rail_normal_expanded" / "valid" / "defect",
+        repo_root / "data" / "external" / "rail_defects_expanded" / "valid" / "images",
+        repo_root / "data" / "external" / "rail_defects_synthetic" / "valid" / "images",
+        repo_root / "data" / "external" / "rail_defects" / "valid" / "images",
+        repo_root / "data" / "external" / "rail_defects_expanded" / "test" / "images",
+        repo_root / "data" / "external" / "rail_defects" / "test" / "images",
+    ]
+
+    for c_dir in candidate_dirs:
+        if c_dir.exists():
+            imgs = sorted(list(c_dir.glob("*.jpg")) + list(c_dir.glob("*.png")) + list(c_dir.glob("*.jpeg")))
+            if len(imgs) >= 5:
+                return imgs
+
+    return []
+
+
 def train_patchcore(
-    data_dir: str = "data/external/rail_normal_only",
+    data_dir: str = "data/external/rail_normal_expanded",
     config_path: str = "ml/configs/anomaly.yaml",
     sampling_ratio: Optional[float] = None,
     max_coreset_size: int = 3000,
@@ -134,11 +155,11 @@ def train_patchcore(
 ) -> Tuple[str, str]:
     """
     Full training pipeline for Enhanced PatchCore:
-    1. Extract patch features from normal training images with batching.
-    2. Subsample features using fast core-set selection.
-    3. Build FAISS nearest-neighbor search index.
-    4. Compute P99 threshold on normal validation images and fit Sigmoid calibrator.
-    5. Benchmark on defect validation set (TPR / FPR).
+    1. Multi-scale feature extraction across Layer 2 and Layer 3.
+    2. Fast Core-set selection.
+    3. Build FAISS nearest-neighbor index.
+    4. Compute P99 threshold on normal validation set and fit Sigmoid calibrator.
+    5. Comprehensive Benchmark on defect validation set (Explicit TPR / FPR).
     6. Save memory bank (.npz) and calibration (.json).
     """
     repo_root = ModelRegistry.ROOT
@@ -176,11 +197,11 @@ def train_patchcore(
     patch_size = model_cfg.get("patch_size", 3)
 
     print("=" * 75)
-    print("TrackChain — Enhanced PatchCore Visual Anomaly Detector Training (tc.v1 SOTA)")
+    print("TrackChain — Enhanced PatchCore Visual Anomaly Detector (tc.v1 SOTA)")
     print("=" * 75)
     print(f"Backbone:        {backbone_name}")
     print(f"Normal Dataset:  {abs_data_dir}")
-    print(f"Patch Size:      {patch_size}x{patch_size}")
+    print(f"Patch Size:      {patch_size}x{patch_size} (Multi-scale Layer2 + Layer3)")
     print(f"Coreset Ratio:   {coreset_ratio:.1%} (Max Coreset: {max_coreset_size})")
     print(f"Batch Size:      {batch_size}")
     print(f"Calib P99 Target:{percentile}%")
@@ -188,20 +209,19 @@ def train_patchcore(
 
     train_good_dir = abs_data_dir / "train" / "good"
     valid_good_dir = abs_data_dir / "valid" / "good"
-    defect_dir = abs_data_dir / "valid" / "defect"
 
     if not train_good_dir.exists():
         raise FileNotFoundError(f"Training normal images directory not found: {train_good_dir}")
 
     train_images = sorted(list(train_good_dir.glob("*.jpg")) + list(train_good_dir.glob("*.png")))
-    valid_images = sorted(list(valid_good_dir.glob("*.jpg")) + list(valid_good_dir.glob("*.png")))
+    valid_images = sorted(list(valid_good_dir.glob("*.jpg")) + list(valid_good_dir.glob("*.png"))) if valid_good_dir.exists() else []
 
     if not train_images:
         raise ValueError(f"No normal training images found in {train_good_dir}")
 
-    print(f"\n[1/5] Loaded {len(train_images)} normal training images, {len(valid_images)} validation images.")
+    print(f"\n[1/5] Loaded {len(train_images)} normal training images, {len(valid_images)} normal validation images.")
 
-    # Initialize detector backbone
+    # Initialize detector backbone with multi-scale Layer2 + Layer3 feature extraction
     detector = PatchCoreAnomalyDetector(
         backbone_name=backbone_name,
         device=actual_device,
@@ -209,8 +229,8 @@ def train_patchcore(
     )
     transform = get_default_transform(224)
 
-    # 1. Extract patch features using batched DataLoader for maximum throughput
-    print("\n[2/5] Extracting multi-scale patch embeddings from normal track...")
+    # 1. Multi-scale feature extraction across normal dataset
+    print("\n[2/5] Extracting multi-scale patch embeddings (Layer2 + Layer3) from normal track...")
     all_patch_features: List[np.ndarray] = []
 
     dataset = ImageDataset(train_images, transform=transform)
@@ -225,7 +245,7 @@ def train_patchcore(
 
     raw_memory_bank = np.concatenate(all_patch_features, axis=0)
     extract_time = time.time() - start_extract
-    print(f"      Extracted {raw_memory_bank.shape[0]} raw normal patch embeddings in {extract_time:.1f}s (Dim={raw_memory_bank.shape[1]}).")
+    print(f"      Extracted {raw_memory_bank.shape[0]} raw multi-scale patch embeddings in {extract_time:.1f}s (Dim={raw_memory_bank.shape[1]}).")
 
     # Optional dimension reduction
     projector = None
@@ -234,8 +254,8 @@ def train_patchcore(
         projector = SparseRandomProjection(n_components=target_dim, random_state=42)
         raw_memory_bank = projector.fit_transform(raw_memory_bank).astype(np.float32)
 
-    # 2. Core-set subsampling
-    print("\n[3/5] Performing Accelerated Minimax Core-set selection...")
+    # 2. Fast Core-set selection
+    print("\n[3/5] Performing Vectorized Minimax Core-set selection...")
     start_coreset = time.time()
     coreset_memory_bank = fast_greedy_coreset_subsampling(
         raw_memory_bank,
@@ -253,7 +273,7 @@ def train_patchcore(
     valid_distances: List[float] = []
     val_pool = valid_images if valid_images else train_images[:min(60, len(train_images))]
 
-    for v_path in tqdm(val_pool, desc="Calibrating on normal validation track"):
+    for v_path in tqdm(val_pool, desc="Evaluating normal validation track"):
         try:
             v_img = Image.open(v_path).convert("RGB")
             dist, _ = detector.predict_raw(v_img)
@@ -268,10 +288,12 @@ def train_patchcore(
     p99_thresh = calibrator.fit(valid_distances, percentile=percentile)
     print(f"      Normal Baseline: Mean={np.mean(valid_distances):.2f}, Max={np.max(valid_distances):.2f}, P99 Threshold={p99_thresh:.2f}")
 
-    # 4. Defect validation benchmark
+    # 4. Defect validation benchmark with explicit TPR / FPR logging
     print("\n[5/5] Benchmarking on defect validation set (TPR / FPR analysis)...")
     val_out_dir = Path(output_validation or "artifacts/validation/patchcore")
     val_out_dir.mkdir(parents=True, exist_ok=True)
+
+    defect_images = find_defect_validation_images(abs_data_dir, repo_root)
 
     validation_metrics: Dict[str, Any] = {
         "p99_threshold": float(p99_thresh),
@@ -283,46 +305,61 @@ def train_patchcore(
         "backbone": backbone_name,
     }
 
-    if defect_dir.exists():
-        defect_images = sorted(list(defect_dir.glob("*.jpg")) + list(defect_dir.glob("*.png")))
-        if defect_images:
-            defect_distances: List[float] = []
-            for d_path in tqdm(defect_images, desc="Evaluating defect validation samples"):
+    fpr = float(np.mean([n >= p99_thresh for n in valid_distances]))
+    validation_metrics["false_positive_rate"] = fpr
+
+    if defect_images:
+        print(f"      Found {len(defect_images)} defect validation samples for TPR benchmark.")
+        defect_distances: List[float] = []
+        for d_path in tqdm(defect_images[:150], desc="Evaluating defect validation samples"):
+            try:
+                d_img = Image.open(d_path).convert("RGB")
+                dist, _ = detector.predict_raw(d_img)
+                defect_distances.append(float(dist))
+            except Exception:
+                continue
+
+        if defect_distances:
+            tpr = float(np.mean([d >= p99_thresh for d in defect_distances]))
+            validation_metrics["true_positive_rate"] = tpr
+            validation_metrics["defect_mean_dist"] = float(np.mean(defect_distances))
+            validation_metrics["defect_min_dist"] = float(np.min(defect_distances))
+            validation_metrics["num_defect_samples"] = len(defect_distances)
+            validation_metrics["separation_margin"] = float(np.mean(defect_distances) - np.mean(valid_distances))
+
+            print("\n" + "=" * 75)
+            print("PatchCore Anomaly Detector Benchmark Verification")
+            print("=" * 75)
+            print(f"      🎯 True Positive Rate (Recall): {tpr * 100:.1f}% ({len(defect_distances)} defect samples)")
+            print(f"      🛡️ False Positive Rate (FPR):   {fpr * 100:.1f}% ({len(valid_distances)} normal samples)")
+            print(f"      ⚖️ Threshold used (P99):        {p99_thresh:.2f}")
+            print(f"      📊 Defect Mean Distance:        {np.mean(defect_distances):.2f}")
+            print(f"      📊 Normal Mean Distance:        {np.mean(valid_distances):.2f}")
+            print(f"      📈 Anomaly Separation Margin:   {validation_metrics['separation_margin']:.2f}")
+            print("=" * 75)
+
+            # Plot distribution if matplotlib available
+            if plt is not None and sns is not None:
                 try:
-                    d_img = Image.open(d_path).convert("RGB")
-                    dist, _ = detector.predict_raw(d_img)
-                    defect_distances.append(float(dist))
+                    plt.figure(figsize=(9, 5))
+                    sns.kdeplot(valid_distances, label='Normal Track (Baseline)', color='green', fill=True, alpha=0.4)
+                    sns.kdeplot(defect_distances, label='Defect Track (Anomalies)', color='red', fill=True, alpha=0.4)
+                    plt.axvline(p99_thresh, color='black', linestyle='--', label=f'P99 Threshold ({p99_thresh:.2f})')
+                    plt.xlabel('PatchCore Multi-Scale Nearest-Neighbor Distance')
+                    plt.ylabel('Density')
+                    plt.title(f'PatchCore Anomaly Separation (TPR={tpr:.1%}, FPR={fpr:.1%})')
+                    plt.legend()
+                    plot_path = val_out_dir / "patchcore_score_distribution.png"
+                    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+                    plt.close()
+                    print(f"      Saved score distribution plot: {plot_path}")
                 except Exception:
-                    continue
-
-            if defect_distances:
-                tpr = float(np.mean([d >= p99_thresh for d in defect_distances]))
-                fpr = float(np.mean([n >= p99_thresh for n in valid_distances]))
-                validation_metrics["true_positive_rate"] = tpr
-                validation_metrics["false_positive_rate"] = fpr
-                validation_metrics["defect_mean_dist"] = float(np.mean(defect_distances))
-                validation_metrics["num_defect_samples"] = len(defect_distances)
-
-                print(f"      True Positive Rate (TPR):  {tpr:.1%} ({len(defect_distances)} defect samples)")
-                print(f"      False Positive Rate (FPR): {fpr:.1%} ({len(valid_distances)} normal samples)")
-
-                # Plot distribution if matplotlib available
-                if plt is not None and sns is not None:
-                    try:
-                        plt.figure(figsize=(9, 5))
-                        sns.kdeplot(valid_distances, label='Normal Track (Baseline)', color='green', fill=True, alpha=0.4)
-                        sns.kdeplot(defect_distances, label='Defect Track (Anomalies)', color='red', fill=True, alpha=0.4)
-                        plt.axvline(p99_thresh, color='black', linestyle='--', label=f'P99 Threshold ({p99_thresh:.2f})')
-                        plt.xlabel('PatchCore Nearest-Neighbor L2 Distance')
-                        plt.ylabel('Density')
-                        plt.title('PatchCore Visual Anomaly Separation')
-                        plt.legend()
-                        plot_path = val_out_dir / "patchcore_score_distribution.png"
-                        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-                        plt.close()
-                        print(f"      Saved score distribution plot: {plot_path}")
-                    except Exception:
-                        pass
+                    pass
+    else:
+        validation_metrics["true_positive_rate"] = 0.0
+        print("      [WARN] No defect validation samples found. TPR could not be calculated.")
+        print(f"      🛡️ False Positive Rate (FPR):   {fpr * 100:.1f}%")
+        print(f"      ⚖️ Threshold used (P99):        {p99_thresh:.2f}")
 
     with open(val_out_dir / "validation_metrics.json", "w", encoding="utf-8") as f:
         json.dump(validation_metrics, f, indent=2)
@@ -356,7 +393,7 @@ def train_patchcore(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Enhanced PatchCore Visual Anomaly Detector (tc.v1 SOTA).")
-    parser.add_argument("--data", default="data/external/rail_normal_only", help="Path to normal dataset directory")
+    parser.add_argument("--data", "--data-path", dest="data", default="data/external/rail_normal_expanded", help="Path to normal dataset directory")
     parser.add_argument("--config", default="ml/configs/anomaly.yaml", help="Path to anomaly.yaml")
     parser.add_argument("--coreset_ratio", "--ratio", dest="coreset_ratio", type=float, default=None, help="Coreset subsampling ratio")
     parser.add_argument("--max_coreset", type=int, default=3000, help="Maximum number of coreset representative patches")

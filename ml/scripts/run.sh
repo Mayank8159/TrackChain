@@ -70,8 +70,10 @@ while [[ $# -gt 0 ]]; do
         --epochs-bilstm)  EPOCHS_BILSTM="$2"; shift 2;;
         --epochs-vae)     EPOCHS_VAE="$2"; shift 2;;
         --batch)          BATCH_SIZE="$2"; shift 2;;
-        --force)          FORCE=true; shift;;
+        --imgsz)          IMGSZ_YOLO="$2"; shift 2;;
+        --force|--force-retrain) FORCE=true; shift;;
         --clean)          CLEAN=true; shift;;
+        --resume)         RESUME=true; shift;;
         --skip-yolo)      SKIP_YOLO=true; shift;;
         --skip-patchcore) SKIP_PATCHCORE=true; shift;;
         --skip-bilstm)    SKIP_BILSTM=true; shift;;
@@ -85,9 +87,10 @@ cd "$REPO_ROOT"
 mkdir -p "$LOG_DIR" "$CHECKPOINT_DIR/vision" "$CHECKPOINT_DIR/geometry" "$EXPORT_DIR"
 
 if [[ "$CLEAN" == true ]]; then
-    warn "Cleaning all checkpoints, exports, and logs..."
+    warn "Cleaning all checkpoints, exports, manifests, and logs..."
     find "$CHECKPOINT_DIR" -name "*.done" -type f -delete
     find "$EXPORT_DIR" -name "*.done" -type f -delete
+    rm -f "$CHECKPOINT_DIR/vision/yolo_manifest.json" "$EXPORT_DIR/export_manifest.json"
     ok "Clean complete. Re-run without --clean to start training."
     exit 0
 fi
@@ -96,23 +99,29 @@ START_TIME=$(date +%s)
 header "TrackChain Phase 2 — Master ML Training Pipeline"
 info "Repo root:      $REPO_ROOT"
 info "Compute Device: $DEVICE_INFO"
-info "YOLO epochs:    $EPOCHS_YOLO"
+info "YOLO epochs:    $EPOCHS_YOLO (imgsz=$IMGSZ_YOLO)"
 info "Bi-LSTM epochs: $EPOCHS_BILSTM"
 info "VAE epochs:     $EPOCHS_VAE"
 info "Batch size:     $BATCH_SIZE"
 info "Force retrain:  $FORCE"
+info "Resume mode:    $RESUME"
 
-# --- Helper: checkpoint-aware run --------------------------------------------
+# --- Helper: manifest & checkpoint-aware run ---------------------------------
 run_step() {
     local step_name="$1"
     local checkpoint="$2"
     shift 2
     local cmd=("$@")
 
-    # SMART CHECKPOINTING: Skip if .done file exists and --force is not used
-    if [[ "$FORCE" == false && -f "$checkpoint" ]]; then
-        info "[$step_name] Already completed (checkpoint found). Skipping."
-        return 0
+    # SMART MANIFEST-BASED SKIP LOGIC:
+    if [[ "$FORCE" == false ]]; then
+        if python ml/scripts/should_skip.py --step "$step_name" 2>/dev/null; then
+            info "[$step_name] Already up-to-date (manifest verified). Skipping."
+            return 0
+        elif [[ -f "$checkpoint" && "$step_name" != "train_yolo" && "$step_name" != "export_yolo_onnx" && "$step_name" != "export_yolo_int8" ]]; then
+            info "[$step_name] Already completed (checkpoint found). Skipping."
+            return 0
+        fi
     fi
 
     info "[$step_name] Starting..."
@@ -166,9 +175,9 @@ run_step "generate_normal" \
         --output "$DATA_ROOT/processed/normal_sequences/"
 
 # =============================================================================
-# STEP 2: YOLO Training (Phase 2.1)
+# STEP 2: YOLO Training (Phase 2.1) — High-Res & Anti-Overfitting SOTA
 # =============================================================================
-header "STEP 2/7: YOLOv8n Visual Defect Detector"
+header "STEP 2/7: YOLOv8n Visual Defect Detector (imgsz=$IMGSZ_YOLO)"
 
 YOLO_DATA="$DATA_ROOT/external/rail_defects/data.yaml"
 if [[ -f "$DATA_ROOT/external/rail_defects_expanded/data.yaml" ]]; then
@@ -178,25 +187,37 @@ fi
 if [[ "$SKIP_YOLO" == true ]]; then
     warn "Skipping YOLO (--skip-yolo)"
 else
+    YOLO_EXTRA_FLAGS=()
+    if [[ "$FORCE" == true ]]; then YOLO_EXTRA_FLAGS+=(--force); fi
+    if [[ "$RESUME" == true ]]; then YOLO_EXTRA_FLAGS+=(--resume); fi
+
     run_step "train_yolo" \
         "$CHECKPOINT_DIR/vision/.yolo_train.done" \
         python ml/scripts/train_detector.py \
             --data "$YOLO_DATA" \
             --epochs "$EPOCHS_YOLO" \
             --batch "$BATCH_SIZE" \
-            --device "$TRAIN_DEVICE"
+            --imgsz "$IMGSZ_YOLO" \
+            --device "$TRAIN_DEVICE" \
+            "${YOLO_EXTRA_FLAGS[@]}"
+
+    EXPORT_FLAGS=()
+    if [[ "$FORCE" == true ]]; then EXPORT_FLAGS+=(--force); fi
 
     run_step "export_yolo_onnx" \
         "$EXPORT_DIR/.yolo_onnx.done" \
         python ml/inference/exporters.py \
             --model "$CHECKPOINT_DIR/vision/yolov8n_rail_best.pt" \
-            --format onnx
+            --imgsz "$IMGSZ_YOLO" \
+            --format onnx \
+            "${EXPORT_FLAGS[@]}"
 
     run_step "export_yolo_int8" \
         "$EXPORT_DIR/.yolo_int8.done" \
         python ml/inference/exporters.py \
             --model "$CHECKPOINT_DIR/vision/yolov8n_rail_best.pt" \
-            --format int8
+            --format int8 \
+            "${EXPORT_FLAGS[@]}"
 fi
 
 # =============================================================================
@@ -204,12 +225,19 @@ fi
 # =============================================================================
 header "STEP 3/7: PatchCore Visual Anomaly Detector"
 
+PATCHCORE_DATA="$DATA_ROOT/external/rail_normal_only"
+if [[ -d "$DATA_ROOT/external/rail_normal_expanded/train/good" ]]; then
+    PATCHCORE_DATA="$DATA_ROOT/external/rail_normal_expanded"
+    info "Using expanded PatchCore dataset (800+ images)"
+fi
+
 if [[ "$SKIP_PATCHCORE" == true ]]; then
     warn "Skipping PatchCore (--skip-patchcore)"
 else
     run_step "train_patchcore" \
         "$CHECKPOINT_DIR/vision/.patchcore_train.done" \
         python ml/scripts/train_anomaly.py \
+            --data-path "$PATCHCORE_DATA" \
             --coreset_ratio 0.10 \
             --fpr_target 0.01 \
             --device "$TRAIN_DEVICE"

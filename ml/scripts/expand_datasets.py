@@ -511,19 +511,19 @@ def expand_patchcore_dataset(
     target_count: int = 800,
     augment_factor: int = 8,
 ) -> Dict[str, Any]:
-    """Execute complete dataset expansion for PatchCore."""
+    """Execute complete dataset expansion for PatchCore with train/valid/test and defect validation splits."""
     abs_norm = Path(normal_data_root) if Path(normal_data_root).is_absolute() else repo_root / normal_data_root
     abs_out = Path(output_root) if Path(output_root).is_absolute() else repo_root / output_root
     abs_out.mkdir(parents=True, exist_ok=True)
-    
+
     for split in ['train/good', 'valid/good', 'test/good', 'valid/defect']:
         (abs_out / split).mkdir(parents=True, exist_ok=True)
-    
+
     # Collect existing normals
     existing = list(abs_norm.glob('**/*.jpg')) + list(abs_norm.glob('**/*.png')) if abs_norm.exists() else []
     pipelines = create_normal_augmentation_pipeline()
-    
-    augmented_paths = []
+
+    all_normals = []
     idx = 0
     for p in existing:
         img = cv2.imread(str(p))
@@ -532,18 +532,57 @@ def expand_patchcore_dataset(
         variants = augment_normal_image(img, pipelines, num_augmentations=augment_factor)
         for v in variants:
             idx += 1
-            dst = abs_out / 'train' / 'good' / f"norm_{idx:05d}.jpg"
-            cv2.imwrite(str(dst), v)
-            augmented_paths.append(dst)
-    
+            all_normals.append(v)
+
     # Add procedurally synthesized tracks if count below target
-    while len(augmented_paths) < target_count:
+    while len(all_normals) < target_count:
         idx += 1
         syn_img = generate_track_pattern()
-        dst = abs_out / 'train' / 'good' / f"syn_norm_{idx:05d}.jpg"
-        cv2.imwrite(str(dst), syn_img)
-        augmented_paths.append(dst)
-    
+        all_normals.append(syn_img)
+
+    random.seed(42)
+    random.shuffle(all_normals)
+
+    # Split normal samples: 80% train, 10% valid, 10% test
+    n_total = len(all_normals)
+    n_val = max(50, int(n_total * 0.10))
+    n_test = max(50, int(n_total * 0.10))
+    n_train = n_total - n_val - n_test
+
+    train_normals = all_normals[:n_train]
+    val_normals = all_normals[n_train:n_train + n_val]
+    test_normals = all_normals[n_train + n_val:]
+
+    for i, img in enumerate(train_normals):
+        cv2.imwrite(str(abs_out / 'train' / 'good' / f"norm_train_{i+1:05d}.jpg"), img)
+    for i, img in enumerate(val_normals):
+        cv2.imwrite(str(abs_out / 'valid' / 'good' / f"norm_val_{i+1:05d}.jpg"), img)
+    for i, img in enumerate(test_normals):
+        cv2.imwrite(str(abs_out / 'test' / 'good' / f"norm_test_{i+1:05d}.jpg"), img)
+
+    # Populate valid/defect with defect validation images
+    defect_sources = [
+        repo_root / "data" / "external" / "rail_defects_expanded" / "valid" / "images",
+        repo_root / "data" / "external" / "rail_defects_synthetic" / "valid" / "images",
+        repo_root / "data" / "external" / "rail_defects" / "valid" / "images",
+        repo_root / "data" / "external" / "rail_defects_expanded" / "test" / "images",
+        repo_root / "data" / "external" / "rail_defects" / "test" / "images",
+    ]
+
+    defect_imgs = []
+    for d_src in defect_sources:
+        if d_src.exists():
+            defect_imgs.extend(list(d_src.glob("*.jpg")) + list(d_src.glob("*.png")))
+
+    num_defects_copied = 0
+    if defect_imgs:
+        random.seed(42)
+        selected_defects = random.sample(defect_imgs, min(150, len(defect_imgs)))
+        for i, d_path in enumerate(selected_defects):
+            dst = abs_out / 'valid' / 'defect' / f"defect_{i+1:05d}.jpg"
+            shutil.copy(d_path, dst)
+            num_defects_copied += 1
+
     # Create dataset config
     cfg = {
         'path': abs_out.resolve().as_posix(),
@@ -551,12 +590,14 @@ def expand_patchcore_dataset(
         'valid': 'valid/good',
         'test': 'test/good',
         'defect_valid': 'valid/defect',
-        'normal_count': {'train': len(augmented_paths), 'valid': 50, 'test': 50}
+        'normal_count': {'train': len(train_normals), 'valid': len(val_normals), 'test': len(test_normals)},
+        'defect_count': {'valid': num_defects_copied},
     }
     with open(abs_out / 'dataset_config.yaml', 'w', encoding='utf-8') as f:
         yaml.dump(cfg, f, sort_keys=False)
-    
-    return {'train': len(augmented_paths)}
+
+    print(f"[OK] PatchCore dataset expanded: train={len(train_normals)}, valid={len(val_normals)}, test={len(test_normals)}, defect_valid={num_defects_copied}")
+    return {'train': len(train_normals), 'valid': len(val_normals), 'defect_valid': num_defects_copied}
 
 
 # Backwards compatibility alias

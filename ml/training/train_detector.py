@@ -1,8 +1,8 @@
 """
 ml/training/train_detector.py
 Fine-tune the YOLOv8 defect detector on railway defect imagery (tc.v1 SOTA).
-Upgraded for high resolution (imgsz=960), anti-overfitting (freeze=10, dropout=0.1),
-and extended mosaic retention (close_mosaic=10).
+Upgraded for high resolution (imgsz=960), manifest fingerprinting skip-logic,
+anti-overfitting (freeze=10, dropout=0.1), and Test-Time Augmentation (TTA) evaluation.
 """
 
 import sys
@@ -18,8 +18,8 @@ __all__ = ["train_yolo_detector"]
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Train YOLOv8 defect detector (Upgraded Recipe).")
-    parser.add_argument("--data", default="data/external/rail_defects/data.yaml", help="Path to data.yaml")
+    parser = argparse.ArgumentParser(description="Train YOLOv8 defect detector (tc.v1 SOTA).")
+    parser.add_argument("--data", default="data/external/rail_defects_expanded/data.yaml", help="Path to data.yaml")
     parser.add_argument("--config", default="ml/configs/detector.yaml", help="Path to detector.yaml")
     parser.add_argument("--epochs", type=int, default=80, help="Number of training epochs")
     parser.add_argument("--batch", type=int, default=8, help="Batch size")
@@ -30,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", default="auto", help="Device ('auto', '0' for CUDA GPU, or 'cpu')")
     parser.add_argument("--output-dir", default=None, help="Output directory for checkpoints")
     parser.add_argument("--resume", action="store_true", help="Resume training")
+    parser.add_argument("--force", "--force-retrain", dest="force", action="store_true", help="Force retrain and bypass manifest check")
     args = parser.parse_args()
 
     train_yolo_detector(
@@ -44,4 +45,5 @@ if __name__ == "__main__":
         device=args.device,
         output_dir=args.output_dir,
         resume=args.resume,
+        force=args.force,
     )
