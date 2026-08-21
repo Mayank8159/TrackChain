@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
-# TrackChain Master ML Training Orchestrator (tc.v1 SOTA)
-# Trains all 5 Phase 2 models in dependency order with checkpointing.
+# TrackChain Master ML Training Orchestrator
+# Trains all 5 Phase 2 models in dependency order with SMART checkpointing.
 #
 # Usage:
 #   chmod +x ml/scripts/run.sh
-#   ./ml/scripts/run.sh [--epochs-yolo N] [--epochs-bilstm N] [--epochs-vae N]
-#                       [--imgsz N] [--batch N] [--resume] [--skip-yolo] [--skip-patchcore]
+#   ./ml/scripts/run.sh                              # Runs ONLY missing/failed steps
+#   ./ml/scripts/run.sh --force                      # Re-runs EVERYTHING (overwrites)
+#   ./ml/scripts/run.sh --clean                      # Wipes all checkpoints
+#   ./ml/scripts/run.sh --skip-yolo --skip-patchcore # Skips specific steps
 #
 # Output:
 #   - Trained weights in artifacts/checkpoints/
@@ -26,12 +28,14 @@ DATA_ROOT="$REPO_ROOT/data"
 
 export PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"
 
-EPOCHS_YOLO=${EPOCHS_YOLO:-80}
+EPOCHS_YOLO=${EPOCHS_YOLO:-50}
 EPOCHS_BILSTM=${EPOCHS_BILSTM:-20}
 EPOCHS_VAE=${EPOCHS_VAE:-30}
-BATCH_SIZE=${BATCH_SIZE:-8}
-IMGSZ_YOLO=${IMGSZ_YOLO:-960}
-RESUME=false
+BATCH_SIZE=${BATCH_SIZE:-16}
+
+# Flags
+FORCE=false
+CLEAN=false
 SKIP_YOLO=false
 SKIP_PATCHCORE=false
 SKIP_BILSTM=false
@@ -65,9 +69,9 @@ while [[ $# -gt 0 ]]; do
         --epochs-yolo)    EPOCHS_YOLO="$2"; shift 2;;
         --epochs-bilstm)  EPOCHS_BILSTM="$2"; shift 2;;
         --epochs-vae)     EPOCHS_VAE="$2"; shift 2;;
-        --imgsz)          IMGSZ_YOLO="$2"; shift 2;;
         --batch)          BATCH_SIZE="$2"; shift 2;;
-        --resume)         RESUME=true; shift;;
+        --force)          FORCE=true; shift;;
+        --clean)          CLEAN=true; shift;;
         --skip-yolo)      SKIP_YOLO=true; shift;;
         --skip-patchcore) SKIP_PATCHCORE=true; shift;;
         --skip-bilstm)    SKIP_BILSTM=true; shift;;
@@ -76,19 +80,27 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# --- Setup -------------------------------------------------------------------
+# --- Setup & Clean Logic -----------------------------------------------------
 cd "$REPO_ROOT"
 mkdir -p "$LOG_DIR" "$CHECKPOINT_DIR/vision" "$CHECKPOINT_DIR/geometry" "$EXPORT_DIR"
+
+if [[ "$CLEAN" == true ]]; then
+    warn "Cleaning all checkpoints, exports, and logs..."
+    find "$CHECKPOINT_DIR" -name "*.done" -type f -delete
+    find "$EXPORT_DIR" -name "*.done" -type f -delete
+    ok "Clean complete. Re-run without --clean to start training."
+    exit 0
+fi
 
 START_TIME=$(date +%s)
 header "TrackChain Phase 2 — Master ML Training Pipeline"
 info "Repo root:      $REPO_ROOT"
 info "Compute Device: $DEVICE_INFO"
-info "YOLO epochs:    $EPOCHS_YOLO (imgsz=$IMGSZ_YOLO)"
+info "YOLO epochs:    $EPOCHS_YOLO"
 info "Bi-LSTM epochs: $EPOCHS_BILSTM"
 info "VAE epochs:     $EPOCHS_VAE"
 info "Batch size:     $BATCH_SIZE"
-info "Resume mode:    $RESUME"
+info "Force retrain:  $FORCE"
 
 # --- Helper: checkpoint-aware run --------------------------------------------
 run_step() {
@@ -97,18 +109,26 @@ run_step() {
     shift 2
     local cmd=("$@")
 
-    if [[ "$RESUME" == true && -f "$checkpoint" ]]; then
-        warn "[$step_name] Checkpoint exists, skipping: $checkpoint"
+    # SMART CHECKPOINTING: Skip if .done file exists and --force is not used
+    if [[ "$FORCE" == false && -f "$checkpoint" ]]; then
+        info "[$step_name] Already completed (checkpoint found). Skipping."
         return 0
     fi
 
     info "[$step_name] Starting..."
-    if "${cmd[@]}" 2>&1 | tee "$LOG_DIR/${step_name}.log"; then
+    
+    # Temporarily disable exit-on-error to capture the exact exit code of the piped command
+    set +e
+    "${cmd[@]}" 2>&1 | tee "$LOG_DIR/${step_name}.log"
+    local status=${PIPESTATUS[0]}
+    set -e
+    
+    if [[ $status -eq 0 ]]; then
         touch "$checkpoint"
         ok "[$step_name] Completed successfully"
     else
-        err "[$step_name] FAILED. See log: $LOG_DIR/${step_name}.log"
-        return 1
+        err "[$step_name] FAILED (exit code $status). See log: $LOG_DIR/${step_name}.log"
+        exit 1
     fi
 }
 
@@ -117,14 +137,14 @@ run_step() {
 # =============================================================================
 header "STEP 1/7: Data Verification & Generation"
 
-# Synthesize defect dataset if not already present
-if [[ ! -d "$DATA_ROOT/external/rail_defects_synthetic/train/images" && ! -d "$DATA_ROOT/external/rail_defects_expanded/train/images" && ! -d "$DATA_ROOT/external/rail_defects/train/images" ]]; then
-    info "Generating synthetic defect training dataset..."
-    python ml/scripts/generate_synthetic_defects.py \
-        --normal-bank "$DATA_ROOT/external/rail_normal_only" \
-        --output-dir "$DATA_ROOT/external/rail_defects_synthetic" \
-        --samples-per-class 300 \
-        --imgsz "$IMGSZ_YOLO"
+if ! python -c "import os
+has_yolo = os.path.exists('$DATA_ROOT/external/rail_defects_expanded/train/images') or os.path.exists('$DATA_ROOT/external/rail_defects/train/images')
+has_patch = os.path.exists('$DATA_ROOT/external/rail_normal_expanded/train/good') or os.path.exists('$DATA_ROOT/external/rail_normal_only/train/good')
+assert has_yolo, 'YOLO dataset missing'
+assert has_patch, 'PatchCore dataset missing'
+print('[OK] Vision datasets verified')" 2>/dev/null; then
+    err "Vision datasets not found. Ensure '$DATA_ROOT/external/rail_defects' and '$DATA_ROOT/external/rail_normal_only' exist."
+    exit 1
 fi
 
 run_step "generate_trc" \
@@ -146,14 +166,12 @@ run_step "generate_normal" \
         --output "$DATA_ROOT/processed/normal_sequences/"
 
 # =============================================================================
-# STEP 2: YOLO Training (Phase 2.1) — Upgraded Recipe
+# STEP 2: YOLO Training (Phase 2.1)
 # =============================================================================
-header "STEP 2/7: YOLOv8n Visual Defect Detector (Upgraded Recipe)"
+header "STEP 2/7: YOLOv8n Visual Defect Detector"
 
 YOLO_DATA="$DATA_ROOT/external/rail_defects/data.yaml"
-if [[ -f "$DATA_ROOT/external/rail_defects_synthetic/data.yaml" ]]; then
-    YOLO_DATA="$DATA_ROOT/external/rail_defects_synthetic/data.yaml"
-elif [[ -f "$DATA_ROOT/external/rail_defects_expanded/data.yaml" ]]; then
+if [[ -f "$DATA_ROOT/external/rail_defects_expanded/data.yaml" ]]; then
     YOLO_DATA="$DATA_ROOT/external/rail_defects_expanded/data.yaml"
 fi
 
@@ -166,14 +184,6 @@ else
             --data "$YOLO_DATA" \
             --epochs "$EPOCHS_YOLO" \
             --batch "$BATCH_SIZE" \
-            --imgsz "$IMGSZ_YOLO" \
-            --freeze 10 \
-            --dropout 0.1 \
-            --erasing 0.2 \
-            --copy-paste 0.5 \
-            --close-mosaic 10 \
-            --patience 20 \
-            --conf 0.25 \
             --device "$TRAIN_DEVICE"
 
     run_step "export_yolo_onnx" \
@@ -200,9 +210,7 @@ else
     run_step "train_patchcore" \
         "$CHECKPOINT_DIR/vision/.patchcore_train.done" \
         python ml/scripts/train_anomaly.py \
-            --coreset_ratio 0.08 \
-            --max_coreset 3000 \
-            --batch_size 32 \
+            --coreset_ratio 0.10 \
             --fpr_target 0.01 \
             --device "$TRAIN_DEVICE"
 fi
@@ -212,7 +220,10 @@ fi
 # =============================================================================
 header "STEP 4/7: EN 13848 Physics Verification"
 
-python -c "
+if [[ "$FORCE" == false && -f "$CHECKPOINT_DIR/geometry/.physics_verify.done" ]]; then
+    info "[physics_verify] Already completed. Skipping."
+else
+    python -c "
 import pandas as pd
 from ml.models.geometry.physics_detector import EN13848PhysicsThresholdDetector
 det = EN13848PhysicsThresholdDetector()
@@ -223,8 +234,9 @@ score = signals[0].value
 print(f'Physics fired: {fired}, score: {score:.3f}')
 assert fired and abs(score - 0.625) < 0.05, 'Physics math failed!'
 "
-touch "$CHECKPOINT_DIR/geometry/.physics_verify.done"
-ok "[physics_verify] EN 13848 math verified"
+    touch "$CHECKPOINT_DIR/geometry/.physics_verify.done"
+    ok "[physics_verify] EN 13848 math verified"
+fi
 
 # =============================================================================
 # STEP 5: Bi-LSTM Training (Phase 2.4) - ENHANCED
