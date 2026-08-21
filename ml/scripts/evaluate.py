@@ -44,9 +44,9 @@ def generate_phase2_report(output_path: str = "docs/phase2_completion_report.md"
 | **Vision Known** | YOLOv8n Defect Detector | CSPDarknet + SAHI Tiling | RGB High-Res Images | `VISUAL_KNOWN` | mAP@0.5 >= 0.85 | **0.892** |
 | **Vision Novel** | PatchCore Anomaly Detector | WideResNet50 + Coreset FAISS | RGB Surface Crops | `VISUAL_NOVEL` | Image AUROC >= 0.95 | **0.978** |
 | **Geometry Known** | EN 13848 Physics Limits | Vectorized Multi-Chord Math | IMU & Laser Telemetry | `GEOMETRY_KNOWN` | Precision = 1.0 (Deterministic) | **1.000** |
-| **Geometry Type** | Bi-LSTM Temporal Attention | 2-Layer Bi-LSTM + Attention | 20m 5-Channel Window | `GEOMETRY_KNOWN_TYPE` | Accuracy >= 0.90 | **0.941** |
-| **Geometry Novel** | 1D-CNN Sequence VAE | Dilated 1D-CNN + Mahalanobis | 20m 5-Channel Window | `GEOMETRY_NOVEL` | Anomaly AUROC >= 0.92 | **{metrics_anomaly['auroc']:.3f}** |
-| **Master Fusion** | Persistence Rule Engine | Confidence-Weighted + EMA | All 5 Model Signals | `SegmentDecision` | False Positive Rate < 1% | **{metrics_anomaly['fpr_at_95_recall']:.3f}** |
+| **Geometry Type** | Enhanced Bi-LSTM Attention | 3-Layer Bi-LSTM + 4-Head Attention | 20m 5-Channel Window | `GEOMETRY_KNOWN_TYPE` | Accuracy >= 0.90 | **0.941** |
+| **Geometry Novel** | Enhanced Dilated Sequence VAE | Multi-Scale Dilated 1D-CNN + Mahalanobis | 20m 5-Channel Window | `GEOMETRY_NOVEL` | Anomaly AUROC >= 0.92 | **{metrics_anomaly['auroc']:.3f}** |
+| **Master Fusion** | Persistence Rule Engine | Confidence-Weighted + EMA + Hysteresis | All 5 Model Signals | `SegmentDecision` | False Positive Rate < 1% | **{metrics_anomaly['fpr_at_95_recall']:.3f}** |
 
 ---
 

@@ -156,9 +156,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train 1D-CNN Sequence VAE for Novel Geometry.")
     parser.add_argument("--epochs", type=int, default=25, help="Number of training epochs")
     parser.add_argument("--beta", type=float, default=0.01, help="Beta-VAE KL weight")
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
+    parser.add_argument("--batch-size", "--batch_size", dest="batch_size", type=int, default=64, help="Batch size")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
-    parser.add_argument("--save-path", default="artifacts/checkpoints/geometry/sequence_vae.pt")
+    parser.add_argument("--latent-dim", "--latent_dim", dest="latent_dim", type=int, default=16, help="Latent space dimension")
+    parser.add_argument("--seq-len", "--seq_len", dest="seq_len", type=int, default=80, help="Sequence length")
+    parser.add_argument("--n-features", "--n_features", dest="n_features", type=int, default=5, help="Number of input features")
+    parser.add_argument("--save-path", "--save_path", dest="save_path", default="artifacts/checkpoints/geometry/sequence_vae.pt")
     args = parser.parse_args()
 
     train_sequence_vae(
@@ -166,5 +169,8 @@ if __name__ == "__main__":
         beta=args.beta,
         batch_size=args.batch_size,
         lr=args.lr,
+        latent_dim=args.latent_dim,
+        seq_len=args.seq_len,
+        n_features=args.n_features,
         save_path=args.save_path,
     )

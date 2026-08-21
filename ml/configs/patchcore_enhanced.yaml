@@ -1,0 +1,60 @@
+# ============================================================================
+# Enhanced PatchCore Configuration for Railway Anomaly Detection
+# ============================================================================
+
+# Model architecture
+model:
+  backbone: wide_resnet50_2
+  layers:
+    - layer2
+    - layer3
+  patch_sizes: [3, 5, 7]  # Multi-scale detection
+  coreset_ratio: 0.08      # Keep 8% of patches (diverse minimax sampling)
+  dimension_reduction: true
+  target_dim: 128          # Reduced dimension for high throughput
+
+# Training
+training:
+  batch_size: 32
+  num_workers: 0           # Safe for cross-platform execution (Windows/Linux)
+  image_size: 224
+  
+# Calibration
+calibration:
+  target_fpr: 0.01         # 1% false positive rate (P99)
+  method: sigmoid          # Nelder-Mead optimized sigmoid calibration
+  validation_samples: 100  # Normal samples used for calibration
+
+# Inference
+inference:
+  ensemble_method: weighted_average
+  patch_weights:
+    patch_3: 0.3
+    patch_5: 0.4
+    patch_7: 0.3
+  threshold: 0.50
+
+# Data augmentation (for normal samples)
+augmentation:
+  enabled: true
+  techniques:
+    - brightness_contrast
+    - hue_saturation
+    - gaussian_noise
+    - motion_blur
+    - affine_transform
+  probability: 0.5
+
+# Memory optimization
+optimization:
+  use_faiss_gpu: false     # Set true if CUDA FAISS available
+  cache_features: true
+  checkpoint_interval: 50
+
+# Output
+output:
+  checkpoint_dir: artifacts/checkpoints/vision/patchcore_enhanced
+  export_dir: artifacts/exports/vision
+  calibration_dir: artifacts/calibration
+  validation_dir: artifacts/validation/patchcore
+  log_dir: artifacts/logs/patchcore

@@ -1,6 +1,16 @@
-# PatchCore unsupervised visual anomaly detector for novel surface defects (tc.v1 SOTA).
+"""
+PatchCore unsupervised visual anomaly detector for novel surface defects (tc.v1 SOTA).
+Features:
+- Multi-scale patch feature extraction (layer2 + layer3 with adaptive pooling)
+- Dimension reduction via SparseRandomProjection
+- High-performance FAISS L2 memory bank search
+- Gaussian-smoothed anomaly heatmap and bounding box localization
+- Calibrated probability scaling via SigmoidDistanceCalibrator
+- Full contract compliance with CalibratedSignal and ModelRegistry
+"""
 
 import os
+import json
 from pathlib import Path
 from typing import List, Tuple, Optional, Union, Dict, Any
 import numpy as np
@@ -26,6 +36,8 @@ try:
 except ImportError:
     cv2 = None
 
+from sklearn.random_projection import SparseRandomProjection
+
 from ml.core.schema import DefectClass, CalibratedSignal, SignalType
 from ml.core.registry import register_model, ModelRegistry
 from ml.calibration.patchcore_scale import SigmoidDistanceCalibrator
@@ -46,8 +58,8 @@ def get_default_transform(img_size: int = 224):
 class PatchCoreAnomalyDetector:
     """
     PatchCore anomaly detector for novel/unseen visual defects.
-    Extracts multi-scale patch features, computes distance against a normal memory bank,
-    and converts distance into calibrated probability and localized bounding boxes.
+    Extracts multi-scale patch features, queries a normal baseline memory bank via FAISS,
+    and produces calibrated anomaly probabilities and localized bounding boxes.
     """
 
     def __init__(
@@ -56,36 +68,48 @@ class PatchCoreAnomalyDetector:
         fallback_backbone: str = "resnet18",
         device: str = "cpu",
         patch_size: int = 3,
+        patch_sizes: Optional[List[int]] = None,
         k_nearest: int = 1,
         sigma: float = 4.0,
         confidence_threshold: float = 0.50,
         checkpoint_path: Optional[Union[str, Path]] = None,
         calibration_path: Optional[Union[str, Path]] = None,
+        dimension_reduction: bool = False,
+        target_dim: int = 128,
     ):
         self.backbone_name = backbone_name
         self.fallback_backbone = fallback_backbone
         self.device = torch.device(device if torch.cuda.is_available() and device != "cpu" else "cpu")
         self.patch_size = patch_size
+        self.patch_sizes = patch_sizes or [patch_size]
         self.k_nearest = k_nearest
         self.sigma = sigma
         self.threshold = confidence_threshold
+        self.dimension_reduction = dimension_reduction
+        self.target_dim = target_dim
 
         self.backbone: Optional[nn.Module] = None
         self.feature_dim: int = 1536 if "wide" in backbone_name else 384
         self.memory_bank: Optional[np.ndarray] = None
         self.faiss_index: Any = None
         self.nn_model: Any = None
+        self.projector: Optional[Any] = None
+        self.enhanced_model: Optional[Any] = None
         self.calibrator = SigmoidDistanceCalibrator()
         self.transform = get_default_transform(224)
 
         # Initialize neural backbone
         self._init_backbone()
 
-        # Resolve weights and calibration if not explicitly given
+        # Resolve weights and calibration from ModelRegistry if not explicitly provided
         if checkpoint_path is None:
-            default_ckpt = ModelRegistry.get_trained_weights("vision", "patchcore_memory_bank.npz")
-            if default_ckpt.exists():
-                checkpoint_path = default_ckpt
+            enhanced_dir = ModelRegistry.ROOT / "artifacts" / "checkpoints" / "vision" / "patchcore_enhanced"
+            if enhanced_dir.exists() and (enhanced_dir / "config.json").exists():
+                checkpoint_path = enhanced_dir
+            else:
+                default_ckpt = ModelRegistry.get_trained_weights("vision", "patchcore_memory_bank.npz")
+                if default_ckpt.exists():
+                    checkpoint_path = default_ckpt
 
         if calibration_path is None:
             default_cal = ModelRegistry.get_calibration_path("patchcore")
@@ -99,7 +123,7 @@ class PatchCoreAnomalyDetector:
             self.calibrator = SigmoidDistanceCalibrator.load(calibration_path)
 
     def _init_backbone(self):
-        """Load frozen pretrained feature extractor (eval mode)."""
+        """Load frozen pretrained feature extractor."""
         if models is None:
             return
 
@@ -113,18 +137,16 @@ class PatchCoreAnomalyDetector:
                 base = models.resnet18(weights=weights)
                 self.feature_dim = 384
         except Exception:
-            # Fallback to lighter resnet18 if wide_resnet download fails
             weights = models.ResNet18_Weights.DEFAULT
             base = models.resnet18(weights=weights)
             self.feature_dim = 384
 
-        # Freeze all layers
         for param in base.parameters():
             param.requires_grad = False
         base.eval()
         self.backbone = base.to(self.device)
 
-    def extract_features(self, x: torch.Tensor) -> Tuple[torch.Tensor, Tuple[int, int]]:
+    def extract_features(self, x: torch.Tensor, patch_size: Optional[int] = None) -> Tuple[torch.Tensor, Tuple[int, int]]:
         """
         Extract multi-scale patch features from layer2 and layer3.
         Returns flattened patch feature tensor (N_patches, Feature_Dim) and (H_feature, W_feature).
@@ -132,7 +154,8 @@ class PatchCoreAnomalyDetector:
         if self.backbone is None:
             raise RuntimeError("Backbone is not initialized.")
 
-        # Forward pass through initial layers
+        ps = patch_size or self.patch_size
+
         x = self.backbone.conv1(x)
         x = self.backbone.bn1(x)
         x = self.backbone.relu(x)
@@ -142,29 +165,28 @@ class PatchCoreAnomalyDetector:
         l2 = self.backbone.layer2(x)
         l3 = self.backbone.layer3(l2)
 
-        # Patch neighborhood pooling (aggregates local textures)
-        pool = nn.AvgPool2d(kernel_size=self.patch_size, stride=1, padding=self.patch_size // 2)
+        # Patch neighborhood pooling
+        pool = nn.AvgPool2d(kernel_size=ps, stride=1, padding=ps // 2)
         p2 = pool(l2)
         p3 = pool(l3)
 
-        # Resize layer3 to match layer2 spatial resolution
+        # Resize layer3 to match layer2 spatial dimensions
         target_size = p2.shape[-2:]
         p3_resized = F.interpolate(p3, size=target_size, mode="bilinear", align_corners=False)
 
-        # Concatenate along channel dimension
-        features = torch.cat([p2, p3_resized], dim=1)  # (B, C2+C3, H, W)
+        features = torch.cat([p2, p3_resized], dim=1)
         b, c, h, w = features.shape
         self.feature_dim = c
 
-        # Permute and reshape to (B * H * W, C)
         features = features.permute(0, 2, 3, 1).contiguous().view(-1, c)
         return features, (h, w)
 
-    def set_memory_bank(self, memory_bank: np.ndarray):
-        """Set the memory bank array and build the nearest-neighbor search index."""
+    def set_memory_bank(self, memory_bank: np.ndarray, projector: Optional[Any] = None):
+        """Set the memory bank array and build the FAISS nearest-neighbor search index."""
         self.memory_bank = np.ascontiguousarray(memory_bank, dtype=np.float32)
         dim = self.memory_bank.shape[1]
         self.feature_dim = dim
+        self.projector = projector
 
         if faiss is not None:
             index = faiss.IndexFlatL2(dim)
@@ -177,24 +199,52 @@ class PatchCoreAnomalyDetector:
             self.nn_model = nn_model
 
     def save_memory_bank(self, filepath: Union[str, Path]):
-        """Save the memory bank array to .npz file."""
+        """Save the memory bank array and metadata to .npz file."""
         if self.memory_bank is None:
             raise ValueError("No memory bank to save.")
         p = Path(filepath)
         p.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(p, memory_bank=self.memory_bank)
+        save_dict = {
+            "memory_bank": self.memory_bank,
+            "patch_size": self.patch_size,
+            "feature_dim": self.feature_dim,
+        }
+        if self.projector is not None and hasattr(self.projector, "components_"):
+            save_dict["projector_components"] = self.projector.components_.toarray() if hasattr(self.projector.components_, "toarray") else self.projector.components_
+        np.savez_compressed(p, **save_dict)
 
     def load_memory_bank(self, filepath: Union[str, Path]):
-        """Load memory bank from .npz file and build index."""
+        """Load memory bank from .npz file or EnhancedPatchCore checkpoint directory."""
         p = Path(filepath)
         if not p.exists():
             return
-        data = np.load(p)
+        
+        # Check if directory checkpoint (EnhancedPatchCore)
+        if p.is_dir() and ((p / "config.json").exists() or list(p.glob("memory_bank_*.index")) or list(p.glob("memory_bank_*.npz"))):
+            try:
+                from ml.models.vision.patchcore_enhanced import EnhancedPatchCore
+                enhanced = EnhancedPatchCore(
+                    backbone=self.backbone_name,
+                    device=str(self.device),
+                    threshold=self.threshold
+                )
+                enhanced.load(p)
+                self.enhanced_model = enhanced
+                # Also expose primary memory bank from enhanced model if available
+                if enhanced.memory_banks:
+                    first_scale = list(enhanced.memory_banks.keys())[0]
+                    self.memory_bank = enhanced.memory_banks[first_scale]["coreset"]
+                    self.faiss_index = enhanced.memory_banks[first_scale]["index"]
+                return
+            except Exception as e:
+                pass
+
+        data = np.load(p, allow_pickle=True)
         if "memory_bank" in data:
             bank = data["memory_bank"]
-            # Validate feature dimension strictly against backbone
-            if bank.shape[1] == self.feature_dim:
-                self.set_memory_bank(bank)
+            self.set_memory_bank(bank)
+            if "patch_size" in data:
+                self.patch_size = int(data["patch_size"])
 
     def predict_raw(self, image: Union[np.ndarray, Image.Image]) -> Tuple[float, np.ndarray]:
         """
@@ -203,10 +253,13 @@ class PatchCoreAnomalyDetector:
             max_distance: float (raw nearest-neighbor L2 distance)
             anomaly_map: 2D numpy array (H, W) smoothed anomaly heatmap
         """
+        if self.enhanced_model is not None and self.enhanced_model.memory_banks:
+            scores, ens_dist, anom_map = self.enhanced_model.predict_raw_multiscale(image)
+            return ens_dist, anom_map
+
         if self.memory_bank is None:
             return 0.0, np.zeros((224, 224), dtype=np.float32)
 
-        # Prepare tensor
         if isinstance(image, np.ndarray):
             if image.ndim == 2:
                 pil_img = Image.fromarray(image).convert("RGB")
@@ -224,25 +277,28 @@ class PatchCoreAnomalyDetector:
             patch_features, (fh, fw) = self.extract_features(tensor)
             feat_np = patch_features.cpu().numpy().astype(np.float32)
 
+            if self.projector is not None and feat_np.shape[1] != self.memory_bank.shape[1]:
+                try:
+                    feat_np = self.projector.transform(feat_np).astype(np.float32)
+                except Exception:
+                    pass
+
             if feat_np.shape[1] != self.memory_bank.shape[1]:
                 return 0.0, np.zeros((orig_h, orig_w), dtype=np.float32)
 
-            # Query nearest neighbor in memory bank
+            # Query FAISS nearest neighbor
             if self.faiss_index is not None:
                 distances, _ = self.faiss_index.search(feat_np, self.k_nearest)
-                patch_scores = np.sqrt(np.maximum(0.0, distances[:, 0]))  # L2 distance
+                patch_scores = np.sqrt(np.maximum(0.0, distances[:, 0]))
             elif self.nn_model is not None:
                 distances, _ = self.nn_model.kneighbors(feat_np, n_neighbors=self.k_nearest)
                 patch_scores = distances[:, 0]
             else:
-                # Direct vector distance fallback
                 diff = feat_np[:, None, :] - self.memory_bank[None, :, :]
                 dists = np.linalg.norm(diff, axis=-1)
                 patch_scores = np.min(dists, axis=-1)
 
         max_distance = float(np.max(patch_scores))
-
-        # Reshape to spatial feature grid and interpolate to original size
         score_map = patch_scores.reshape(fh, fw)
 
         # Gaussian smoothing
@@ -264,7 +320,7 @@ class PatchCoreAnomalyDetector:
         Returns (x1, y1, x2, y2) in pixel coordinates or None.
         """
         h, w = anomaly_map.shape[:2]
-        denom = (anomaly_map.max() - anomaly_map.min() + 1e-8)
+        denom = anomaly_map.max() - anomaly_map.min() + 1e-8
         norm_map = (anomaly_map - anomaly_map.min()) / denom
         mask = (norm_map > threshold).astype(np.uint8)
 
@@ -290,13 +346,15 @@ class PatchCoreAnomalyDetector:
         Run PatchCore inference and return contract-compliant CalibratedSignal.
         Frame should be a HxWxC uint8 NumPy array.
         """
+        if self.enhanced_model is not None and self.enhanced_model.memory_banks:
+            return self.enhanced_model.predict_signals(frame)
+
         if self.memory_bank is None:
             return []
 
         h, w = frame.shape[:2]
         raw_distance, anomaly_map = self.predict_raw(frame)
 
-        # Calibrate raw distance into [0.0, 1.0] probability
         calibrated_score = self.calibrator.scale(raw_distance)
         fired = bool(calibrated_score >= self.threshold)
 

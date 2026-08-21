@@ -4,10 +4,12 @@ import pytest
 import numpy as np
 from pathlib import Path
 from PIL import Image
+import torch
 
 from ml.calibration.patchcore_scale import SigmoidDistanceCalibrator
 from ml.training.train_anomaly import greedy_coreset_subsampling
 from ml.models.vision.anomaly import PatchCoreAnomalyDetector
+from ml.models.vision.patchcore_enhanced import EnhancedPatchCore
 from ml.core.schema import DefectClass, SignalType, CalibratedSignal
 
 
@@ -74,8 +76,6 @@ def test_patchcore_predict_with_memory_bank():
     # Create synthetic image
     img = np.ones((224, 224, 3), dtype=np.uint8) * 128
     
-    # Extract features to determine dimension
-    import torch
     tensor = detector.transform(Image.fromarray(img)).unsqueeze(0)
     with torch.no_grad():
         feats, _ = detector.extract_features(tensor)
@@ -98,4 +98,72 @@ def test_patchcore_predict_with_memory_bank():
     assert sig.signal_type == SignalType.VISUAL_NOVEL
     assert sig.predicted_class == DefectClass.VISUAL_ANOMALY
     assert sig.stream_name == "patchcore_anomaly"
-    assert sig.calibrated_prob >= 0.0 and sig.calibrated_prob <= 1.0
+    assert 0.0 <= sig.calibrated_prob <= 1.0
+
+
+def test_enhanced_patchcore_multiscale_pipeline(tmp_path):
+    # Initialize EnhancedPatchCore with resnet18 for fast testing
+    model = EnhancedPatchCore(
+        backbone="resnet18",
+        patch_sizes=[3, 5],
+        coreset_ratio=0.10,
+        dimension_reduction=True,
+        target_dim=64,
+        device="cpu"
+    )
+    
+    # Create 3 synthetic sample images
+    img_paths = []
+    for i in range(3):
+        img_arr = (np.random.rand(224, 224, 3) * 255).astype(np.uint8)
+        p = tmp_path / f"norm_{i}.jpg"
+        Image.fromarray(img_arr).save(p)
+        img_paths.append(p)
+    
+    # Build multi-scale memory banks
+    model.build_memory_bank(img_paths, batch_size=2)
+    assert len(model.memory_banks) == 2
+    assert 3 in model.memory_banks
+    assert 5 in model.memory_banks
+    assert model.memory_banks[3]["dimension"] == 64
+    
+    # Calibrate on samples
+    model.calibrate(img_paths, target_fpr=0.05)
+    assert "ensemble" in model.calibration_params
+    assert "patch_3" in model.calibration_params
+    assert "threshold" in model.calibration_params["ensemble"]
+    
+    # Predict multi-scale
+    test_img = np.ones((224, 224, 3), dtype=np.uint8) * 120
+    scores = model.predict(test_img)
+    assert "patch_3" in scores
+    assert "patch_5" in scores
+    assert "ensemble" in scores
+    
+    # Predict signals
+    signals = model.predict_signals(test_img)
+    assert len(signals) == 1
+    sig = signals[0]
+    assert isinstance(sig, CalibratedSignal)
+    assert sig.signal_type == SignalType.VISUAL_NOVEL
+    assert sig.stream_name == "patchcore_anomaly"
+    assert "multiscale_scores" in sig.metadata
+    
+    # Save model and reload
+    save_dir = tmp_path / "enhanced_ckpt"
+    model.save(save_dir)
+    assert (save_dir / "config.json").exists()
+    assert (save_dir / "calibration.json").exists()
+    assert (save_dir / "memory_bank_3.npz").exists()
+    
+    loaded_model = EnhancedPatchCore(device="cpu")
+    loaded_model.load(save_dir)
+    assert len(loaded_model.memory_banks) == 2
+    assert "ensemble" in loaded_model.calibration_params
+    
+    # Test PatchCoreAnomalyDetector wrapping the saved directory checkpoint
+    detector = PatchCoreAnomalyDetector(backbone_name="resnet18", checkpoint_path=save_dir)
+    assert detector.enhanced_model is not None
+    det_signals = detector.predict(test_img)
+    assert len(det_signals) == 1
+    assert det_signals[0].stream_name == "patchcore_anomaly"

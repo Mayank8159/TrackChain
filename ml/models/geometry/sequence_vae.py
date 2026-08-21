@@ -165,15 +165,24 @@ class SequenceVAEDetector:
 
         self.model = SequenceVAE(seq_len=seq_len, n_features=n_features, latent_dim=latent_dim).to(self.device)
 
-        if weights_path and os.path.exists(str(weights_path)):
-            try:
-                ckpt = torch.load(weights_path, map_location=self.device)
-                if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-                    self.model.load_state_dict(ckpt["model_state_dict"])
-                else:
-                    self.model.load_state_dict(ckpt)
-            except Exception as e:
-                print(f"[Warn] Could not load VAE weights from {weights_path}: {e}")
+        # Resolve candidate weight paths
+        candidate_weights = [weights_path] if weights_path else []
+        candidate_weights.extend([
+            "artifacts/checkpoints/geometry/sequence_vae_enhanced.pt",
+            "artifacts/checkpoints/geometry/sequence_vae.pt",
+            "ml/models/geometry/weights/sequence_vae.pt",
+            "ml/models/geometry/weights/sequence_vae_enhanced.pt",
+        ])
+
+        for wp in candidate_weights:
+            if wp and os.path.exists(str(wp)):
+                try:
+                    ckpt = torch.load(wp, map_location=self.device)
+                    state = ckpt["model_state_dict"] if isinstance(ckpt, dict) and "model_state_dict" in ckpt else ckpt
+                    self.model.load_state_dict(state, strict=False)
+                    break
+                except Exception as e:
+                    print(f"[Warn] Could not load VAE weights from {wp}: {e}")
 
         self.model.eval()
 
@@ -183,9 +192,22 @@ class SequenceVAEDetector:
 
         # Sigmoid threshold calibrator
         self.calibrator = SigmoidDistanceCalibrator(threshold=2.0, steepness_k=2.0)
-        if calibrator_path and os.path.exists(str(calibrator_path)):
-            self.calibrator = SigmoidDistanceCalibrator.load(calibrator_path)
-        else:
+        candidate_calibs = [calibrator_path] if calibrator_path else []
+        candidate_calibs.extend([
+            "artifacts/calibration/vae_calibration.json",
+            "artifacts/calibration/sequence_vae_calibration.json",
+        ])
+        loaded_calib = False
+        for cp in candidate_calibs:
+            if cp and os.path.exists(str(cp)):
+                try:
+                    self.calibrator = SigmoidDistanceCalibrator.load(cp)
+                    loaded_calib = True
+                    break
+                except Exception:
+                    pass
+
+        if not loaded_calib:
             # Auto-initialize baseline distribution on nominal noise
             synth_baseline = np.random.normal(0.0, 0.1, (30, self.seq_len, self.n_features)).astype(np.float32)
             self.fit_latent_distribution(synth_baseline)

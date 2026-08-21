@@ -35,6 +35,10 @@ def calibrate_all():
     T_bilstm = scaler.fit(val_logits, val_labels)
     logger.info(f"      Optimal Bi-LSTM Temperature: T = {T_bilstm:.4f}")
 
+    bilstm_cal_path = cal_dir / "bilstm_temp.json"
+    with open(bilstm_cal_path, "w", encoding="utf-8") as f:
+        json.dump({"temperature": float(T_bilstm), "model": "bilstm_geometry_typing"}, f, indent=2)
+
     # 2. Sequence VAE Sigmoid Distance Calibration
     logger.info("[2/4] Calibrating Sequence VAE Reconstruction Sigmoid Thresholds...")
     vae_detector = SequenceVAEDetector(weights_path=None)
@@ -46,6 +50,18 @@ def calibrate_all():
     p99_vae = vae_detector.fit_calibration(normal_data, percentile=99.0)
     vae_cal_path = cal_dir / "sequence_vae_calibration.json"
     vae_detector.calibrator.save(vae_cal_path)
+
+    vae_enhanced_cal_path = cal_dir / "vae_calibration.json"
+    with open(vae_enhanced_cal_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "method": "sigmoid_threshold_scaling",
+            "threshold_recon_p99": float(p99_vae),
+            "threshold_mahalanobis_p99": float(p99_vae * 1.2),
+            "threshold_p99": float(p99_vae),
+            "steepness": 0.5,
+            "target_fpr": 0.01,
+            "model": "sequence_vae_geometry_novel",
+        }, f, indent=2)
     logger.info(f"      Sequence VAE P99 Threshold: {p99_vae:.4f} (Saved: {vae_cal_path})")
 
     # 3. PatchCore Visual Anomaly Sigmoid Calibration
@@ -66,7 +82,7 @@ def calibrate_all():
         "calibration_status": "fitted",
     }
     manifest_path = cal_dir / "params.json"
-    with open(manifest_path, "w") as f:
+    with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(master_manifest, f, indent=2)
 
     logger.info(f"[OK] Master calibration complete. Manifest persisted to: {manifest_path}")

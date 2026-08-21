@@ -1,20 +1,25 @@
 model:
-  name: "bilstm_attention"
+  name: "bilstm_enhanced"
   input_size: 5
-  hidden_size: 64
-  num_layers: 2
-  dropout: 0.3
+  hidden_size: 128
+  num_layers: 3
+  dropout: 0.4
   num_classes: 5
+  use_attention: true
+  num_heads: 4
+  residual_connections: true
 
 training:
-  epochs: 20
-  batch_size: 64
-  learning_rate: 0.001
+  epochs: 50
+  batch_size: 128
+  learning_rate: 0.0005
   weight_decay: 0.0001
+  grad_clip: 1.0
   optimizer: "AdamW"
-  scheduler: "CosineAnnealing"
+  scheduler: "CosineAnnealingWarmRestarts"
   loss: "LabelSmoothingCrossEntropy"
   label_smoothing: 0.1
+  augmentation: true
 
 data:
   seq_len: 80       # 20 meters at 0.25m bins
@@ -28,3 +33,7 @@ classes:
   3: "twist_fault"
   4: "alignment_kink"
   5: "buckling_risk"
+
+calibration:
+  method: "platt_temperature_scaling"
+  target_threshold: 0.50

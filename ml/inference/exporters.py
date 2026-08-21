@@ -81,18 +81,33 @@ def quantize_onnx_int8(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export YOLO models to edge ONNX / INT8 runtimes.")
-    parser.add_argument("--model", default="artifacts/checkpoints/yolov8n_rail_best.pt", help="Path to .pt weights")
+    parser.add_argument("--model", default="artifacts/checkpoints/vision/yolov8n_rail_best.pt", help="Path to .pt weights")
     parser.add_argument("--format", choices=["onnx", "int8", "all"], default="onnx", help="Export target format")
     parser.add_argument("--outdir", default="artifacts/exports", help="Export destination directory")
     args = parser.parse_args()
 
+    model_path = args.model
+    if not os.path.exists(model_path):
+        # Check alternative common locations
+        candidates = [
+            os.path.join("artifacts", "checkpoints", "vision", "yolov8n_rail_best.pt"),
+            os.path.join("artifacts", "checkpoints", "vision", "yolov8n_rail_custom", "weights", "best.pt"),
+            os.path.join("artifacts", "checkpoints", "vision", "yolov8n_rail_run", "weights", "best.pt"),
+            os.path.join("artifacts", "checkpoints", "yolov8n_rail_best.pt"),
+            "yolov8n.pt",
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                model_path = c
+                break
+
     if args.format in ["onnx", "all"]:
-        onnx_file = export_yolo_to_onnx(args.model, output_dir=args.outdir)
+        onnx_file = export_yolo_to_onnx(model_path, output_dir=args.outdir)
         if args.format == "all" or args.format == "int8":
             quantize_onnx_int8(onnx_file)
     elif args.format == "int8":
-        # Check if ONNX exists or export first
-        base_onnx = str(Path(args.outdir) / (Path(args.model).stem + ".onnx"))
+        base_onnx = str(Path(args.outdir) / (Path(model_path).stem + ".onnx"))
         if not os.path.exists(base_onnx):
-            base_onnx = export_yolo_to_onnx(args.model, output_dir=args.outdir)
+            base_onnx = export_yolo_to_onnx(model_path, output_dir=args.outdir)
         quantize_onnx_int8(base_onnx)
+

@@ -100,18 +100,45 @@ class GeometryFaultClassifier:
 
         self.model = BiLSTMAttention(num_classes=num_classes).to(self.device)
 
-        if weights_path and os.path.exists(str(weights_path)):
-            try:
-                ckpt = torch.load(weights_path, map_location=self.device)
-                if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-                    self.model.load_state_dict(ckpt["model_state_dict"])
-                else:
-                    self.model.load_state_dict(ckpt)
-            except Exception as e:
-                print(f"[Warn] Could not load weights from {weights_path}: {e}")
+        # Resolve candidate weight paths
+        candidate_weights = [weights_path] if weights_path else []
+        candidate_weights.extend([
+            "artifacts/checkpoints/geometry/bilstm_fault_typing_enhanced.pt",
+            "artifacts/checkpoints/geometry/bilstm_fault_typing.pt",
+            "ml/models/geometry/weights/fault_classifier.pt",
+            "ml/models/geometry/weights/bilstm_fault_typing_enhanced.pt",
+        ])
+
+        for wp in candidate_weights:
+            if wp and os.path.exists(str(wp)):
+                try:
+                    ckpt = torch.load(wp, map_location=self.device)
+                    state = ckpt["model_state_dict"] if isinstance(ckpt, dict) and "model_state_dict" in ckpt else ckpt
+                    self.model.load_state_dict(state, strict=False)
+                    if isinstance(ckpt, dict) and "temperature" in ckpt:
+                        self.temperature = float(ckpt["temperature"])
+                    break
+                except Exception as e:
+                    print(f"[Warn] Could not load weights from {wp}: {e}")
 
         self.model.eval()
         self.temperature = 1.5
+
+        # Check calibration files for calibrated temperature
+        for cal_p in ["artifacts/calibration/bilstm_temp.json", "artifacts/calibration/params.json"]:
+            if os.path.exists(cal_p):
+                try:
+                    import json
+                    with open(cal_p, "r", encoding="utf-8") as f:
+                        cal_data = json.load(f)
+                    if "temperature" in cal_data:
+                        self.temperature = float(cal_data["temperature"])
+                        break
+                    elif "bilstm_temperature" in cal_data:
+                        self.temperature = float(cal_data["bilstm_temperature"])
+                        break
+                except Exception:
+                    pass
 
     def _format_input(self, geometry_window: Union[np.ndarray, Dict[str, np.ndarray], torch.Tensor]) -> torch.Tensor:
         if isinstance(geometry_window, dict):

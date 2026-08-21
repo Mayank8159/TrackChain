@@ -29,12 +29,12 @@ header "TrackChain Phase 2 — Master ML Test Suite"
 START_TIME=$(date +%s)
 
 # --- Run Complete Test Suite -------------------------------------------------
-info "Executing 21 test suites across Vision, Geometry, and Fusion..."
+info "Executing complete test suite across Vision, Geometry, Enhanced Models, and Fusion..."
 python -m pytest ml/tests -v --tb=short
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 
 header "ML Test Suite Execution Summary"
-ok "All 63 tests across 21 test modules PASSED in ${DURATION}s."
+ok "All tests across test modules PASSED in ${DURATION}s."
 ok "Phase 2 Multi-Modal ML Intelligence Stack is fully verified and production-ready."

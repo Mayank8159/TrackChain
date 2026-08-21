@@ -116,8 +116,10 @@ run_step() {
 header "STEP 1/7: Data Verification & Generation"
 
 if ! python -c "import os
-assert os.path.exists('$DATA_ROOT/external/rail_defects/train/images'), 'YOLO data missing'
-assert os.path.exists('$DATA_ROOT/external/rail_normal_only/train/good'), 'PatchCore data missing'
+has_yolo = os.path.exists('$DATA_ROOT/external/rail_defects_expanded/train/images') or os.path.exists('$DATA_ROOT/external/rail_defects/train/images')
+has_patch = os.path.exists('$DATA_ROOT/external/rail_normal_expanded/train/good') or os.path.exists('$DATA_ROOT/external/rail_normal_only/train/good')
+assert has_yolo, 'YOLO dataset missing'
+assert has_patch, 'PatchCore dataset missing'
 print('[OK] Vision datasets verified')" 2>/dev/null; then
     err "Vision datasets not found. Ensure '$DATA_ROOT/external/rail_defects' and '$DATA_ROOT/external/rail_normal_only' exist."
     exit 1
@@ -146,13 +148,18 @@ run_step "generate_normal" \
 # =============================================================================
 header "STEP 2/7: YOLOv8n Visual Defect Detector"
 
+YOLO_DATA="$DATA_ROOT/external/rail_defects/data.yaml"
+if [[ -f "$DATA_ROOT/external/rail_defects_expanded/data.yaml" ]]; then
+    YOLO_DATA="$DATA_ROOT/external/rail_defects_expanded/data.yaml"
+fi
+
 if [[ "$SKIP_YOLO" == true ]]; then
     warn "Skipping YOLO (--skip-yolo)"
 else
     run_step "train_yolo" \
         "$CHECKPOINT_DIR/vision/.yolo_train.done" \
         python ml/scripts/train_detector.py \
-            --data "$DATA_ROOT/external/rail_defects/data.yaml" \
+            --data "$YOLO_DATA" \
             --epochs "$EPOCHS_YOLO" \
             --batch "$BATCH_SIZE" \
             --device "$TRAIN_DEVICE"
@@ -206,34 +213,47 @@ touch "$CHECKPOINT_DIR/geometry/.physics_verify.done"
 ok "[physics_verify] EN 13848 math verified"
 
 # =============================================================================
-# STEP 5: Bi-LSTM Training (Phase 2.4)
+# STEP 5: Bi-LSTM Training (Phase 2.4) - ENHANCED
 # =============================================================================
-header "STEP 5/7: Bi-LSTM Geometry Fault Typing"
+header "STEP 5/7: Bi-LSTM Geometry Fault Typing (Enhanced)"
 
 if [[ "$SKIP_BILSTM" == true ]]; then
     warn "Skipping Bi-LSTM (--skip-bilstm)"
 else
     run_step "train_bilstm" \
         "$CHECKPOINT_DIR/geometry/.bilstm_train.done" \
-        python ml/scripts/train_fault_classifier.py \
-            --epochs "$EPOCHS_BILSTM" \
-            --batch_size "$BATCH_SIZE"
+        python ml/scripts/train_fault_classifier_enhanced.py \
+            --epochs 50 \
+            --hidden-size 128 \
+            --num-layers 3 \
+            --batch_size 128 \
+            --lr 0.0005 \
+            --label-smoothing 0.1 \
+            --dropout 0.4 \
+            --data-path "$DATA_ROOT/processed/geometry_sequences/" \
+            --save-path "$CHECKPOINT_DIR/geometry/bilstm_fault_typing_enhanced.pt"
 fi
 
 # =============================================================================
-# STEP 6: Seq-VAE Training (Phase 2.5)
+# STEP 6: Seq-VAE Training (Phase 2.5) - FIXED AND ENHANCED
 # =============================================================================
-header "STEP 6/7: Sequence VAE Novel Geometry Detector"
+header "STEP 6/7: Sequence VAE Novel Geometry Detector (Enhanced)"
 
 if [[ "$SKIP_VAE" == true ]]; then
     warn "Skipping Seq-VAE (--skip-vae)"
 else
     run_step "train_vae" \
         "$CHECKPOINT_DIR/geometry/.vae_train.done" \
-        python ml/scripts/train_sequence_vae.py \
-            --epochs "$EPOCHS_VAE" \
+        python ml/scripts/train_sequence_vae_enhanced.py \
+            --epochs 50 \
             --beta 0.01 \
-            --latent_dim 16
+            --latent-dim 16 \
+            --batch-size 64 \
+            --lr 0.001 \
+            --kl-annealing \
+            --annealing-epochs 10 \
+            --data-path "$DATA_ROOT/processed/normal_sequences/" \
+            --save-path "$CHECKPOINT_DIR/geometry/sequence_vae_enhanced.pt"
 fi
 
 # =============================================================================

@@ -1,20 +1,29 @@
 model:
-  name: "sequence_vae"
+  name: "sequence_vae_enhanced"
   seq_len: 80
   n_features: 5
   latent_dim: 16
+  encoder_type: "dilated_1d_cnn"
+  dilations: [1, 4, 10]
+  fusion_channels: 128
+  huber_loss: true
 
 training:
-  epochs: 25
+  epochs: 50
   beta: 0.01
   batch_size: 64
   learning_rate: 0.001
   weight_decay: 0.0001
+  grad_clip: 1.0
+  kl_annealing: true
+  annealing_epochs: 10
   optimizer: "AdamW"
-  scheduler: "CosineAnnealing"
+  scheduler: "CosineAnnealingLR"
 
 calibration:
-  method: "sigmoid"
+  method: "sigmoid_p99"
   percentile: 99.0
-  steepness_k: 2.5
+  steepness_k: 0.5
+  target_fpr: 0.01
   operating_threshold: 0.50
+  scoring: "dual_path_ensemble" # 0.7 * recon + 0.3 * mahalanobis

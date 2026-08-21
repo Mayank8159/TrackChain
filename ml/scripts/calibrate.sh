@@ -30,35 +30,17 @@ header "TrackChain Phase 2 — Master Calibration Pipeline"
 
 # --- STEP 1: Temperature Scaling for YOLO -----------------------------------
 header "STEP 1/5: YOLO Temperature Scaling"
-python -c "
-import os, sys, glob, json, numpy as np
-sys.path.append('.')
-from ml.calibration.temperature import TemperatureScaler
-from ml.models.vision.detector import YOLOv8DefectDetector
+YOLO_VAL="data/external/rail_defects/data.yaml"
+if [[ -f "data/external/rail_defects_expanded/data.yaml" ]]; then
+    YOLO_VAL="data/external/rail_defects_expanded/data.yaml"
+fi
 
-scaler = TemperatureScaler()
-detector = YOLOv8DefectDetector()
-
-val_images = glob.glob('data/external/rail_defects/valid/images/*.jpg')[:200]
-raw_scores, labels = [], []
-for img in val_images:
-    sigs = detector.predict(img)
-    for s in sigs:
-        raw_scores.append(s.raw_score)
-        labels.append(1 if s.fired else 0)
-
-if len(raw_scores) < 10:
-    # Synthetic validation logits fallback
-    raw_scores = np.random.randn(200, 2)
-    labels = np.random.randint(0, 2, 200)
-
-T = scaler.fit(np.array(raw_scores), np.array(labels))
-print(f'[YOLO] Fitted temperature: T={T:.3f}')
-
-with open('$CALIB_DIR/yolo_temp.json', 'w') as f:
-    json.dump({'temperature': float(T), 'model': 'yolo_visual_detector'}, f, indent=2)
-"
+python ml/scripts/calibrate_yolo.py \
+    --model "artifacts/checkpoints/vision/yolov8n_rail_best.pt" \
+    --val-data "$YOLO_VAL" \
+    --output "$CALIB_DIR/yolo_temp.json"
 ok "YOLO temperature parameter saved"
+
 
 # --- STEP 2: PatchCore Sigmoid P99 Threshold --------------------------------
 header "STEP 2/5: PatchCore Sigmoid Calibration"
@@ -71,7 +53,9 @@ from ml.models.vision.anomaly import PatchCoreAnomalyDetector
 calibrator = SigmoidDistanceCalibrator()
 detector = PatchCoreAnomalyDetector()
 
-normal_images = glob.glob('data/external/rail_normal_only/valid/good/*.jpg')[:300]
+normal_images = glob.glob('data/external/rail_normal_expanded/valid/good/*.jpg')[:300]
+if not normal_images:
+    normal_images = glob.glob('data/external/rail_normal_only/valid/good/*.jpg')[:300]
 distances = []
 for img in normal_images:
     sigs = detector.predict(img)
@@ -169,6 +153,7 @@ ok "Seq-VAE sigmoid calibration saved"
 
 # --- STEP 5: Cross-Model Sync Verification ----------------------------------
 header "STEP 5/5: Cross-Model Calibration Sync Verification"
+python ml/scripts/calibrate_all_models.py
 python -m pytest ml/tests/test_calibration_sync.py ml/tests/test_signal_contract.py -v --tb=short
 ok "All 5 models calibrated to identical [0.0, 1.0] scale"
 
