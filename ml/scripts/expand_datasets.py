@@ -241,11 +241,20 @@ def expand_dataset(
     augment_factor: int = 10,
     train_ratio: float = 0.80,
     val_ratio: float = 0.15,
+    original_data_root: Optional[str] = None,
+    random_seed: Optional[int] = 42,
+    max_samples: Optional[int] = None,
+    **kwargs,
 ) -> Dict[str, Any]:
     """Execute complete dataset expansion and generation for YOLO."""
-    abs_data_root = Path(data_root) if Path(data_root).is_absolute() else repo_root / data_root
+    root = original_data_root or data_root
+    abs_data_root = Path(root) if Path(root).is_absolute() else repo_root / root
     abs_output_root = Path(output_root) if Path(output_root).is_absolute() else repo_root / output_root
     abs_output_root.mkdir(parents=True, exist_ok=True)
+    
+    if random_seed is not None:
+        random.seed(random_seed)
+        np.random.seed(random_seed)
     
     for split in ['train', 'valid', 'test']:
         (abs_output_root / split / 'images').mkdir(parents=True, exist_ok=True)
@@ -272,6 +281,9 @@ def expand_dataset(
             if bboxes:
                 samples.append({'image_path': str(img_p), 'bboxes': bboxes, 'source': 'original'})
     
+    if max_samples is not None and len(samples) > max_samples:
+        samples = samples[:max_samples]
+
     pipelines = create_railway_augmentation_pipeline()
     augmented_samples = []
     

@@ -106,6 +106,25 @@ class MetricsLogger:
             pass
 
 
+class ProgressiveTrainer:
+    """Manages progressive resolution scaling and training schedules."""
+
+    def __init__(self, base_imgsz: int = 416, final_imgsz: int = 640):
+        self.base_imgsz = base_imgsz
+        self.final_imgsz = final_imgsz
+
+    def get_imgsz_for_epoch(self, epoch: int, total_epochs: int) -> int:
+        """Calculate image size for current epoch (progressive resolution)."""
+        if epoch <= int(total_epochs * 0.3):
+            return self.base_imgsz
+        elif epoch <= int(total_epochs * 0.7):
+            progress = (epoch - int(total_epochs * 0.3)) / max(1, int(total_epochs * 0.4))
+            raw_sz = int(self.base_imgsz + progress * (self.final_imgsz - self.base_imgsz))
+            return int((raw_sz // 32) * 32)
+        else:
+            return self.final_imgsz
+
+
 def train_yolo_detector(
     data_yaml: str = "data/external/rail_defects_expanded/data.yaml",
     config_path: str = "ml/configs/detector.yaml",

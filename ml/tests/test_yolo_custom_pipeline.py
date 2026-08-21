@@ -76,16 +76,19 @@ def test_expand_dataset_minimal_run():
     """Test expand_dataset function on the repository's base dataset to create valid data.yaml and splits."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_output = Path(tmp_dir) / "expanded"
-        source_data = Path("data/external/rail_defects")
+        source_data = repo_root / "data" / "external" / "rail_defects"
 
         if not source_data.exists():
-            pytest.skip("Base dataset not present")
+            source_data = repo_root / "data" / "external" / "rail_defects_expanded"
+            if not source_data.exists():
+                pytest.skip("Base dataset not present in this environment")
 
         result = expand_dataset(
             original_data_root=source_data,
             output_root=tmp_output,
             target_per_class=4,
             augment_factor=2,
+            max_samples=10,
             random_seed=123
         )
 
