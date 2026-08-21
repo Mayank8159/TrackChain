@@ -58,9 +58,9 @@ python -m pytest ml/tests/test_final_backend_roundtrip.py -v --tb=short
 info "[7/8] Testing Edge Deployment Latency & Performance Benchmarks..."
 python -m pytest ml/tests/test_final_edge_performance.py -v --tb=short
 
-# --- 8. Core Unit & Signal Contract Suite ------------------------------------
-info "[8/8] Running Complete Unit & Signal Contract Suite..."
-python -m pytest ml/tests/test_signal_contract.py ml/tests/test_calibration_sync.py ml/tests/test_vae_evt_normalization.py ml/tests/test_patchcore_enhanced.py ml/tests/test_yolo_custom_pipeline.py -v --tb=short
+# --- 8. Consistency, Physics & Signal Contract Suite -------------------------
+info "[8/8] Running Hardened P0 Consistency, Physics Correctness & Unit Suite..."
+python -m pytest ml/tests/test_final_consistency.py ml/tests/test_signal_contract.py ml/tests/test_calibration_sync.py ml/tests/test_vae_evt_normalization.py ml/tests/test_patchcore_enhanced.py ml/tests/test_yolo_custom_pipeline.py -v --tb=short
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
@@ -73,6 +73,6 @@ ok "4. Fusion Decision Matrix:  PASSED (truth table & cross-modal 1.5x boost)"
 ok "5. Robustness & Safety:    PASSED (missing frames, NaNs, empty segments)"
 ok "6. Backend Round-Trip:     PASSED (tc.v1 schema preserved ML -> API -> DB)"
 ok "7. Edge Performance:       PASSED (real-time latency budget >= 15 FPS)"
-ok "8. Unit & Contract Tests:  PASSED (signal contracts & normalization guards)"
+ok "8. P0/P1 Consistency Suite:PASSED (single source of truth & contract guards)"
 echo ""
 ok "TrackChain ML Stack is 100% sealed, verified, and production-ready."

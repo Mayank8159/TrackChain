@@ -1,6 +1,7 @@
 """
 ml/models/geometry/fault_classifier.py
 Bi-LSTM with Temporal Attention for Geometry Fault Typing (tc.v1 SOTA).
+Single Source of Truth: NUM_GEOMETRY_CLASSES = 6.
 """
 
 import os
@@ -14,6 +15,9 @@ import torch.nn.functional as F
 from ml.core.schema import CalibratedSignal, SignalType, DefectClass
 from ml.core.registry import register_model
 
+# Canonical single source of truth for geometry fault classification
+NUM_GEOMETRY_CLASSES = 6
+
 
 class BiLSTMAttention(nn.Module):
     """
@@ -24,9 +28,9 @@ class BiLSTMAttention(nn.Module):
     def __init__(
         self,
         input_size: int = 5,
-        hidden_size: int = 64,
-        num_layers: int = 2,
-        num_classes: int = 5,
+        hidden_size: int = 128,
+        num_layers: int = 3,
+        num_classes: int = NUM_GEOMETRY_CLASSES,
         dropout: float = 0.3,
     ):
         super().__init__()
@@ -89,9 +93,9 @@ class GeometryFaultClassifier:
 
     def __init__(
         self,
-        weights_path: Optional[Union[str, Path]] = "artifacts/checkpoints/geometry/bilstm_fault_typing.pt",
+        weights_path: Optional[Union[str, Path]] = "artifacts/checkpoints/geometry/bilstm_fault_typing_enhanced.pt",
         device: str = "cpu",
-        num_classes: int = 5,
+        num_classes: int = NUM_GEOMETRY_CLASSES,
         threshold: float = 0.60,
     ):
         self.device = torch.device(device if torch.cuda.is_available() or device == "cpu" else "cpu")
@@ -100,7 +104,7 @@ class GeometryFaultClassifier:
 
         self.model = BiLSTMAttention(num_classes=num_classes).to(self.device)
 
-        # Resolve candidate weight paths
+        # Resolve candidate weight paths in order of preference
         candidate_weights = [weights_path] if weights_path else []
         candidate_weights.extend([
             "artifacts/checkpoints/geometry/bilstm_fault_typing_enhanced.pt",
@@ -145,7 +149,15 @@ class GeometryFaultClassifier:
                 except Exception:
                     pass
 
+        # Defensive guard: verify model output dimension matches calibration weights
+        if self.vector_weights is not None:
+            assert len(self.vector_weights) == self.num_classes, (
+                f"Class-count mismatch: model={self.num_classes}, "
+                f"calibration={len(self.vector_weights)}. Retrain or refit to align."
+            )
+
     def _format_input(self, geometry_window: Union[np.ndarray, Dict[str, np.ndarray], torch.Tensor]) -> torch.Tensor:
+        """Standardizes input geometry telemetry into shape [1, seq_len, 5]."""
         if isinstance(geometry_window, dict):
             keys = [
                 ("twist_3m", "twist_3m_mm"),
@@ -192,7 +204,11 @@ class GeometryFaultClassifier:
             logits_np = logits.cpu().numpy()[0]
 
             # Apply SOTA Vector Scaling (or fallback temperature scaling)
-            if self.vector_weights is not None and self.vector_biases is not None:
+            if (
+                self.vector_weights is not None
+                and self.vector_biases is not None
+                and len(self.vector_weights) == len(logits_np)
+            ):
                 scaled_logits_np = logits_np * self.vector_weights + self.vector_biases
                 exp_logits = np.exp(scaled_logits_np - np.max(scaled_logits_np))
                 probs = exp_logits / np.sum(exp_logits)
@@ -228,8 +244,8 @@ class GeometryFaultClassifier:
                     "attention_peak_bin": peak_bin,
                     "attention_weights": [round(float(v), 4) for v in attn.tolist()],
                     "class_probabilities": {
-                        self.CLASS_MAP.get(i, DefectClass.NORMAL).value: round(float(probs[i]), 4)
-                        for i in range(len(probs))
+                        self.CLASS_MAP.get(i, DefectClass.NORMAL).value: round(float(p), 4)
+                        for i, p in enumerate(probs)
                     },
                 },
             )

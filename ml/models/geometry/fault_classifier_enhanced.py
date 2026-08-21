@@ -74,7 +74,7 @@ class EnhancedBiLSTMClassifier(nn.Module):
         input_size: int = 5,
         hidden_size: int = 128,
         num_layers: int = 3,
-        num_classes: int = 5,
+        num_classes: int = 6,
         dropout: float = 0.4,
         use_attention: bool = True,
         num_heads: int = 4,

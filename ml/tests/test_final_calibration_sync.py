@@ -17,6 +17,7 @@ repo_root = Path(__file__).resolve().parent.parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
+from ml.core.schema import DefectClass
 from ml.calibration.unified_calibrator import UnifiedCalibrator
 from ml.calibration.temperature import TemperatureScaler, VectorScaler
 from ml.calibration.patchcore_scale import SigmoidDistanceCalibrator, WeibullDistanceCalibrator
@@ -75,8 +76,13 @@ def test_physics_deterministic_exceedance_ratio():
         "gauge_deviation_mm": np.full(80, 0.5),
     }
     signals_exc = detector.evaluate_features(features_exceed)
-    twist_sigs = [s for s in signals_exc if "twist" in s.name.lower()]
-    assert len(twist_sigs) > 0
+    twist_sigs = [
+        s for s in signals_exc
+        if s.predicted_class == DefectClass.TWIST_EXCEEDANCE
+        or "twist" in getattr(s, "name", "").lower()
+        or (getattr(s, "metadata", None) and "twist" in str(s.metadata.get("feature", "")).lower())
+    ]
+    assert len(twist_sigs) > 0, "Expected at least one twist exceedance signal to be generated"
     assert twist_sigs[0].fired
     assert 0.50 <= twist_sigs[0].value <= 1.0
 

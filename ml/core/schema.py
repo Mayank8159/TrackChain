@@ -181,6 +181,24 @@ class CalibratedSignal:
     def label(self) -> Optional[DefectClass]:
         return self.predicted_class
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.stream_name,
+            "stream_name": self.stream_name,
+            "model_version": self.metadata.get("model_version", "0.1.0"),
+            "signal_type": self.signal_type.value if hasattr(self.signal_type, "value") else str(self.signal_type),
+            "value": float(self.calibrated_prob),
+            "raw_score": float(self.raw_score),
+            "calibrated_prob": float(self.calibrated_prob),
+            "threshold": float(self.threshold),
+            "fired": bool(self.is_anomaly),
+            "is_anomaly": bool(self.is_anomaly),
+            "predicted_class": self.predicted_class.value if hasattr(self.predicted_class, "value") else str(self.predicted_class) if self.predicted_class else None,
+            "bbox": list(self.bbox) if self.bbox else None,
+            "explanation": self.explanation,
+            "metadata": self.metadata,
+        }
+
 
 @dataclass
 class SegmentSignals:
@@ -259,11 +277,11 @@ class SegmentDecision:
         **kwargs,
     ):
         self.decision = decision if decision is not None else DecisionType.OK
-        self.primary_fault = primary_fault
+        self.primary_fault = primary_fault or kwargs.get("primary_defect")
         self.severity = severity if severity is not None else SeverityLevel.LOW
         self.window_id = window_id
-        self.start_chainage_m = float(start_chainage_m)
-        self.end_chainage_m = float(end_chainage_m)
+        self.start_chainage_m = float(start_chainage_m if start_chainage_m != 0.0 else kwargs.get("chainage_start_m", 0.0))
+        self.end_chainage_m = float(end_chainage_m if end_chainage_m != 0.0 else kwargs.get("chainage_end_m", 0.0))
         self.confidence = float(confidence)
         self.defect_family = defect_family
         self.signals = signals if signals is not None else []
@@ -274,4 +292,63 @@ class SegmentDecision:
         self.cross_modal_boost = float(cross_modal_boost)
         self.traces = traces if traces is not None else []
         for k, v in kwargs.items():
-            setattr(self, k, v)
+            if k in ("chainage_start_m", "start_chainage_m"):
+                self.start_chainage_m = float(v)
+            elif k in ("chainage_end_m", "end_chainage_m"):
+                self.end_chainage_m = float(v)
+            elif k in ("primary_defect", "primary_fault"):
+                self.primary_fault = v
+            else:
+                setattr(self, k, v)
+
+    @property
+    def primary_defect(self) -> Optional[Union[DefectClass, str]]:
+        return self.primary_fault
+
+    @primary_defect.setter
+    def primary_defect(self, value: Optional[Union[DefectClass, str]]) -> None:
+        self.primary_fault = value
+
+    @property
+    def chainage_start_m(self) -> float:
+        return self.start_chainage_m
+
+    @chainage_start_m.setter
+    def chainage_start_m(self, value: float) -> None:
+        self.start_chainage_m = float(value)
+
+    @property
+    def chainage_end_m(self) -> float:
+        return self.end_chainage_m
+
+    @chainage_end_m.setter
+    def chainage_end_m(self, value: float) -> None:
+        self.end_chainage_m = float(value)
+
+    def to_dict(self) -> Dict[str, Any]:
+        prim_def = self.primary_fault
+        if hasattr(prim_def, "value"):
+            prim_def_str = prim_def.value
+        elif prim_def is not None:
+            prim_def_str = str(prim_def)
+        else:
+            prim_def_str = None
+
+        return {
+            "schema_version": self.schema_version,
+            "window_id": self.window_id,
+            "chainage_start_m": float(self.start_chainage_m),
+            "chainage_end_m": float(self.end_chainage_m),
+            "start_chainage_m": float(self.start_chainage_m),
+            "end_chainage_m": float(self.end_chainage_m),
+            "decision": self.decision.value if hasattr(self.decision, "value") else str(self.decision),
+            "severity": self.severity.value if hasattr(self.severity, "value") else str(self.severity),
+            "confidence": round(float(self.confidence), 4),
+            "primary_defect": prim_def_str,
+            "primary_fault": prim_def_str,
+            "action": getattr(self, "action", "Routine inspection cycle maintained."),
+            "section_type": getattr(self, "section_type", "mainline_standard"),
+            "cross_modal_boost": float(self.cross_modal_boost),
+            "signals": [s.to_dict() if hasattr(s, "to_dict") else s for s in self.signals],
+            "timestamp": self.timestamp,
+        }

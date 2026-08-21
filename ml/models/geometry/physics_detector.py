@@ -110,6 +110,7 @@ class EN13848PhysicsThresholdDetector:
             if fired or score > 0.35:
                 signals.append(
                     CalibratedSignal(
+                        name="physics_twist_3m",
                         stream_name="geometry_physics",
                         raw_score=max_twist,
                         calibrated_prob=score,
@@ -141,6 +142,7 @@ class EN13848PhysicsThresholdDetector:
 
                 signals.append(
                     CalibratedSignal(
+                        name="physics_gauge_deviation",
                         stream_name="geometry_physics",
                         raw_score=max_gauge_dev,
                         calibrated_prob=score,
@@ -170,6 +172,7 @@ class EN13848PhysicsThresholdDetector:
             if fired or score > 0.35:
                 signals.append(
                     CalibratedSignal(
+                        name="physics_versine_10m",
                         stream_name="geometry_physics",
                         raw_score=max_versine,
                         calibrated_prob=score,
@@ -198,6 +201,7 @@ class EN13848PhysicsThresholdDetector:
             if fired or score > 0.35:
                 signals.append(
                     CalibratedSignal(
+                        name="physics_unevenness_10m",
                         stream_name="geometry_physics",
                         raw_score=max_uneven,
                         calibrated_prob=score,

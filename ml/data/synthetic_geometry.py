@@ -41,6 +41,7 @@ CLASS_TO_DEFECT_ENUM = {
 }
 
 DEFECT_ENUM_TO_CLASS = {v: k for k, v in CLASS_TO_DEFECT_ENUM.items()}
+FAULT_TYPES = CLASS_MAP
 
 
 class SyntheticGeometryDataset(Dataset):
@@ -49,13 +50,15 @@ class SyntheticGeometryDataset(Dataset):
     (0: Twist_3m, 1: Versine_10m, 2: Versine_20m, 3: Unevenness_10m, 4: Cant).
     """
 
+    FAULT_TYPES = CLASS_MAP
+
     def __init__(
         self,
         num_samples: int = 2000,
         seq_len: int = 80,
         bin_size: float = 0.25,
         noise_std: float = 0.5,
-        num_classes: int = 5,
+        num_classes: int = 6,
         random_seed: Optional[int] = None,
     ):
         self.num_samples = num_samples
