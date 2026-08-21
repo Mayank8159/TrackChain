@@ -18,6 +18,7 @@ import torch.nn.functional as F
 from ml.core.schema import CalibratedSignal, SignalType, DefectClass
 from ml.core.registry import register_model
 from ml.calibration.patchcore_scale import SigmoidDistanceCalibrator
+from ml.models.geometry.sequence_vae_enhanced import EnhancedSequenceVAE
 
 
 class DilatedEncoder(nn.Module):
@@ -99,15 +100,17 @@ class SequenceVAE(nn.Module):
         return mu + eps * std
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # x shape: (batch, seq_len, n_features)
-        x_trans = x.transpose(1, 2)  # [B, n_features, seq_len]
+        if x.dim() == 2:
+            x = x.unsqueeze(0)
 
+        # Transpose [batch, seq_len, features] -> [batch, features, seq_len] for Conv1d
+        x_trans = x.transpose(1, 2)
         mu, logvar = self.encoder(x_trans)
         z = self.reparameterize(mu, logvar)
 
-        decoded = self.decoder_input(z)
-        recon_trans = self.decoder(decoded)
-        recon_x = recon_trans.transpose(1, 2)  # [B, seq_len, n_features]
+        h = F.relu(self.decoder_input(z))
+        recon_trans = self.decoder(h)
+        recon_x = recon_trans.transpose(1, 2)  # [batch, seq_len, features]
 
         return recon_x, mu, logvar
 
@@ -119,18 +122,26 @@ class SequenceVAE(nn.Module):
         logvar: torch.Tensor,
         beta: float = 0.01,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Beta-VAE loss function prioritizing reconstruction fidelity (beta=0.01)."""
+        if recon_x.shape != x.shape:
+            min_len = min(recon_x.shape[1], x.shape[1])
+            recon_x = recon_x[:, :min_len, :]
+            x = x[:, :min_len, :]
+
         recon_loss = F.mse_loss(recon_x, x, reduction="mean")
-        kld_loss = -0.5 * torch.mean(torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1))
-        total_loss = recon_loss + (beta * kld_loss)
+        kld_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+        total_loss = recon_loss + beta * kld_loss
         return total_loss, recon_loss, kld_loss
 
     def compute_reconstruction_error(self, x: torch.Tensor) -> torch.Tensor:
-        """Computes sample-wise Mean Squared Reconstruction Error."""
+        self.eval()
         with torch.no_grad():
             recon_x, _, _ = self.forward(x)
-            mse = torch.mean((recon_x - x) ** 2, dim=(1, 2))
-        return mse
+            if recon_x.shape != x.shape:
+                min_len = min(recon_x.shape[1], x.shape[1])
+                recon_x = recon_x[:, :min_len, :]
+                x = x[:, :min_len, :]
+            error = torch.mean((recon_x - x) ** 2, dim=(1, 2))
+        return error
 
     def compute_anomaly_score(self, x: torch.Tensor) -> torch.Tensor:
         """Alias for compute_reconstruction_error."""
@@ -141,14 +152,15 @@ class SequenceVAE(nn.Module):
 class SequenceVAEDetector:
     """
     Production detector wrapper for SequenceVAE featuring:
+      - Enhanced multi-scale dilated convolutions matching trained SOTA checkpoint
       - Dual-Path Anomaly Scoring (Reconstruction MSE + Latent Mahalanobis Distance)
-      - Sigmoid Calibration for calibrated [0.0, 1.0] novelty probabilities
+      - EVT & Sigmoid Calibration for calibrated [0.0, 1.0] novelty probabilities
     """
 
     def __init__(
         self,
-        weights_path: Optional[Union[str, Path]] = "artifacts/checkpoints/geometry/sequence_vae.pt",
-        calibrator_path: Optional[Union[str, Path]] = "artifacts/calibration/sequence_vae_calibration.json",
+        weights_path: Optional[Union[str, Path]] = "artifacts/checkpoints/geometry/sequence_vae_enhanced.pt",
+        calibrator_path: Optional[Union[str, Path]] = "artifacts/calibration/vae_calibration.json",
         device: str = "cpu",
         seq_len: int = 80,
         n_features: int = 5,
@@ -163,9 +175,12 @@ class SequenceVAEDetector:
         self.alpha = float(alpha)
         self.threshold = threshold
 
-        self.model = SequenceVAE(seq_len=seq_len, n_features=n_features, latent_dim=latent_dim).to(self.device)
+        # Default model is EnhancedSequenceVAE matching trained SOTA checkpoint ([128, 192, 1] fusion)
+        self.model: Union[EnhancedSequenceVAE, SequenceVAE] = EnhancedSequenceVAE(
+            seq_len=seq_len, n_features=n_features, latent_dim=latent_dim
+        ).to(self.device)
 
-        # Resolve candidate weight paths
+        # Resolve candidate weight paths in order of preference
         candidate_weights = [weights_path] if weights_path else []
         candidate_weights.extend([
             "artifacts/checkpoints/geometry/sequence_vae_enhanced.pt",
@@ -174,15 +189,28 @@ class SequenceVAEDetector:
             "ml/models/geometry/weights/sequence_vae_enhanced.pt",
         ])
 
+        loaded_checkpoint = False
         for wp in candidate_weights:
             if wp and os.path.exists(str(wp)):
                 try:
                     ckpt = torch.load(wp, map_location=self.device)
                     state = ckpt["model_state_dict"] if isinstance(ckpt, dict) and "model_state_dict" in ckpt else ckpt
-                    self.model.load_state_dict(state, strict=False)
+                    # Auto-detect architecture from state dict
+                    if isinstance(state, dict) and "encoder.fusion.0.weight" in state:
+                        in_channels = state["encoder.fusion.0.weight"].shape[1]
+                        if in_channels == 96:
+                            self.model = SequenceVAE(seq_len=seq_len, n_features=n_features, latent_dim=latent_dim).to(self.device)
+                        else:
+                            self.model = EnhancedSequenceVAE(seq_len=seq_len, n_features=n_features, latent_dim=latent_dim).to(self.device)
+                    self.model.load_state_dict(state, strict=True)
+                    loaded_checkpoint = True
                     break
                 except Exception as e:
-                    print(f"[Warn] Could not load VAE weights from {wp}: {e}")
+                    if weights_path is not None and str(wp) == str(weights_path):
+                        raise RuntimeError(
+                            f"VAE weight load FAILED for {weights_path} — architecture mismatch. "
+                            f"Do NOT fall back to a random model. Error: {e}"
+                        )
 
         self.model.eval()
 
@@ -190,8 +218,8 @@ class SequenceVAEDetector:
         self.normal_latent_mean: Optional[np.ndarray] = None
         self.normal_latent_cov_inv: Optional[np.ndarray] = None
 
-        # Sigmoid threshold calibrator
-        self.calibrator = SigmoidDistanceCalibrator(threshold=2.0, steepness_k=2.0)
+        # Sigmoid / EVT threshold calibrator
+        self.calibrator = SigmoidDistanceCalibrator(threshold=1.65, steepness_k=2.0)
         candidate_calibs = [calibrator_path] if calibrator_path else []
         candidate_calibs.extend([
             "artifacts/calibration/vae_calibration.json",
@@ -201,7 +229,14 @@ class SequenceVAEDetector:
         for cp in candidate_calibs:
             if cp and os.path.exists(str(cp)):
                 try:
-                    self.calibrator = SigmoidDistanceCalibrator.load(cp)
+                    with open(cp, "r", encoding="utf-8") as f:
+                        cdata = json.load(f)
+                    thresh = float(cdata.get("threshold_evt", cdata.get("threshold_p99", 1.65)))
+                    k_val = float(cdata.get("steepness_k", cdata.get("steepness", 2.0)))
+                    self.calibrator = SigmoidDistanceCalibrator(threshold=thresh, steepness_k=k_val)
+                    if isinstance(self.model, EnhancedSequenceVAE):
+                        self.model.threshold_evt = thresh
+                        self.model.steepness_k = k_val
                     loaded_calib = True
                     break
                 except Exception:
@@ -252,6 +287,18 @@ class SequenceVAEDetector:
 
     def fit_latent_distribution(self, normal_sequences: Union[np.ndarray, torch.Tensor, List[np.ndarray]]):
         """Fits baseline latent Gaussian distribution (mean and regularized inverse covariance)."""
+        if isinstance(self.model, EnhancedSequenceVAE):
+            if isinstance(normal_sequences, list):
+                normal_tensor = torch.stack([torch.tensor(s, dtype=torch.float32) for s in normal_sequences])
+            elif isinstance(normal_sequences, np.ndarray):
+                normal_tensor = torch.tensor(normal_sequences, dtype=torch.float32)
+            else:
+                normal_tensor = normal_sequences
+            self.model.fit_latent_distribution(normal_tensor)
+            self.normal_latent_mean = self.model.latent_mean
+            self.normal_latent_cov_inv = self.model.latent_cov_inv
+            return
+
         self.model.eval()
         latents = []
 
@@ -282,6 +329,14 @@ class SequenceVAEDetector:
         Computes Dual-Path Anomaly Score:
             Score = alpha * MSE_recon + (1 - alpha) * D_mahalanobis
         """
+        if isinstance(self.model, EnhancedSequenceVAE):
+            if isinstance(sequence, dict):
+                tensor_in = self._format_input(sequence)
+                res = self.model.compute_anomaly_score(tensor_in)
+            else:
+                res = self.model.compute_anomaly_score(sequence)
+            return float(res.get("combined_score", res.get("recon_error", 0.0)))
+
         self.model.eval()
         tensor_in = self._format_input(sequence)
 
@@ -321,15 +376,25 @@ class SequenceVAEDetector:
         Runs the 1D-CNN Dual-Path VAE on the 20m geometry window.
         Returns a calibrated CalibratedSignal indicating structural novelty.
         """
-        combined_score = self.compute_anomaly_score(geometry_window)
-
-        # Sigmoid calibration: score -> probability [0.0, 1.0]
-        calibrated_prob = float(self.calibrator.scale(combined_score))
-        is_anomaly = bool(calibrated_prob >= self.threshold)
+        if isinstance(self.model, EnhancedSequenceVAE):
+            if isinstance(geometry_window, dict):
+                tensor_in = self._format_input(geometry_window)
+                pred = self.model.predict(tensor_in)
+            else:
+                pred = self.model.predict(geometry_window)
+            raw_score = float(pred["raw_score"])
+            calibrated_prob = float(pred["calibrated_prob"])
+            is_anomaly = bool(pred["is_anomaly"])
+            thresh = float(pred.get("threshold", self.threshold))
+        else:
+            raw_score = self.compute_anomaly_score(geometry_window)
+            calibrated_prob = float(self.calibrator.scale(raw_score))
+            is_anomaly = bool(calibrated_prob >= self.threshold)
+            thresh = self.threshold
 
         explanation = {
-            "combined_anomaly_score": round(combined_score, 4),
-            "reconstruction_error": round(combined_score, 4),
+            "combined_anomaly_score": round(raw_score, 4),
+            "reconstruction_error": round(raw_score, 4),
             "calibrated_prob": round(calibrated_prob, 4),
             "p99_threshold": round(self.calibrator.threshold, 4),
             "anomaly_detected": is_anomaly,
@@ -341,9 +406,9 @@ class SequenceVAEDetector:
             model_version="0.1.0",
             signal_type=SignalType.GEOMETRY_NOVEL,
             value=calibrated_prob,
-            raw_score=combined_score,
+            raw_score=raw_score,
             calibrated_prob=calibrated_prob,
-            threshold=self.threshold,
+            threshold=thresh,
             fired=is_anomaly,
             is_anomaly=is_anomaly,
             predicted_class=DefectClass.GEOMETRY_ANOMALY if is_anomaly else DefectClass.NORMAL,
@@ -352,7 +417,7 @@ class SequenceVAEDetector:
             metadata={
                 "model_name": "sequence_vae_dual_path",
                 "latent_dim": self.model.latent_dim,
-                "combined_score": combined_score,
+                "combined_score": raw_score,
                 "calibrator_threshold": self.calibrator.threshold,
             },
         )

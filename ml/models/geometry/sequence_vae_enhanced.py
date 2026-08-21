@@ -18,6 +18,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ml.core.schema import CalibratedSignal, SignalType, DefectClass
+
 
 class DilatedEncoder1D(nn.Module):
     """
@@ -398,6 +400,44 @@ class EnhancedSequenceVAE(nn.Module):
             'mahalanobis_dist': float(scores.get('mahalanobis_dist', 0.0)),
             'threshold': 0.50,
         }
+
+    def predict_signals(self, sequence: Union[torch.Tensor, np.ndarray, Dict[str, np.ndarray]]) -> List[CalibratedSignal]:
+        """
+        Run inference on sequence window and return contract-compliant CalibratedSignal.
+        """
+        pred = self.predict(sequence)
+        raw_score = pred['raw_score']
+        calibrated_prob = pred['calibrated_prob']
+        is_anomaly = pred['is_anomaly']
+
+        signal = CalibratedSignal(
+            name="sequence_vae_anomaly",
+            stream_name="geometry_vae",
+            model_version="0.1.0",
+            signal_type=SignalType.GEOMETRY_NOVEL,
+            value=calibrated_prob,
+            raw_score=raw_score,
+            calibrated_prob=calibrated_prob,
+            threshold=0.50,
+            fired=is_anomaly,
+            is_anomaly=is_anomaly,
+            predicted_class=DefectClass.GEOMETRY_ANOMALY if is_anomaly else DefectClass.NORMAL,
+            bbox=None,
+            explanation={
+                "combined_anomaly_score": round(raw_score, 4),
+                "reconstruction_error": round(pred.get("recon_error", raw_score), 4),
+                "mahalanobis_dist": round(pred.get("mahalanobis_dist", 0.0), 4),
+                "calibrated_prob": round(calibrated_prob, 4),
+                "threshold_evt": round(getattr(self, "threshold_evt", 1.65), 4),
+                "anomaly_detected": is_anomaly,
+            },
+            metadata={
+                "model_name": "enhanced_sequence_vae",
+                "latent_dim": self.latent_dim,
+                "combined_score": raw_score,
+            },
+        )
+        return [signal]
 
     @staticmethod
     def fit_evt_threshold(normal_errors: Union[List[float], np.ndarray], target_fpr: float = 0.01) -> Dict[str, float]:

@@ -139,64 +139,102 @@ with open('$CALIB_DIR/bilstm_temp.json', 'w') as f:
 ok "Bi-LSTM temperature parameter saved"
 
 # --- STEP 4: Seq-VAE Sigmoid Calibration ------------------------------------
-header "STEP 4/5: Seq-VAE Sigmoid Calibration"
+header "STEP 4/5: Seq-VAE EVT & Sigmoid Calibration"
 python -c "
-import os, sys, json, glob, numpy as np, pandas as pd
+import os, sys, json, glob, numpy as np, pandas as pd, torch
 sys.path.append('.')
+from ml.models.geometry.sequence_vae_enhanced import EnhancedSequenceVAE
 from ml.calibration.patchcore_scale import SigmoidDistanceCalibrator
-from ml.models.geometry.sequence_vae import SequenceVAEDetector
 
-detector = SequenceVAEDetector(weights_path=None)
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+model = EnhancedSequenceVAE(seq_len=80, n_features=5, latent_dim=16).to(device)
 
+ckpt_candidates = [
+    'artifacts/checkpoints/geometry/sequence_vae_enhanced.pt',
+    'artifacts/checkpoints/geometry/sequence_vae.pt',
+    'ml/models/geometry/weights/sequence_vae.pt',
+]
+loaded = False
+for cp in ckpt_candidates:
+    if os.path.exists(cp):
+        try:
+            state = torch.load(cp, map_location=device)
+            if isinstance(state, dict) and 'model_state_dict' in state:
+                state = state['model_state_dict']
+            model.load_state_dict(state, strict=True)
+            print(f'[Seq-VAE] Cleanly loaded weights from {cp}')
+            loaded = True
+            break
+        except Exception as e:
+            raise RuntimeError(f'VAE weight load FAILED for {cp} — architecture mismatch: {e}')
+
+if not loaded:
+    print('[WARN] No pre-existing checkpoint on disk; evaluating baseline model')
+
+model.eval()
+
+# Load validation sequences or synthetic baseline
 normal_files = glob.glob('data/processed/normal_sequences/*.csv')
-errors = []
+normal_seqs = []
 if normal_files:
     df = pd.read_csv(normal_files[0])
     for seq_id, grp in df.groupby('sequence_id'):
         cols = ['twist_3m_mm', 'versine_10m_mm', 'versine_20m_mm', 'unevenness_10m_mm', 'cant_mm']
         if all(c in grp.columns for c in cols):
             arr = grp[cols].values
-            errors.append(detector.compute_anomaly_score(arr))
-        if len(errors) >= 200:
+            if len(arr) == 80:
+                normal_seqs.append(arr)
+            elif len(arr) > 80:
+                normal_seqs.append(arr[:80])
+        if len(normal_seqs) >= 200:
             break
 
-if len(errors) < 10:
-    errors = np.random.exponential(scale=1.5, size=200).tolist()
+if len(normal_seqs) < 10:
+    from ml.data.synthetic_geometry import SyntheticGeometryDataset
+    synth_ds = SyntheticGeometryDataset(num_samples=300, num_classes=6)
+    for i in range(len(synth_ds)):
+        X, y = synth_ds[i]
+        if int(y) == 0:
+            normal_seqs.append(X.numpy())
 
-calibrator = SigmoidDistanceCalibrator(steepness_k=2.5, percentile=99.0)
-T = calibrator.fit(errors)
-k = calibrator.steepness_k
-print(f'[Seq-VAE] Fitted P99 recon score: T={T:.3f}, k={k:.3f}')
+# Fit latent distribution for Mahalanobis scoring
+val_tensor = torch.tensor(np.array(normal_seqs), dtype=torch.float32)
+model.fit_latent_distribution(val_tensor)
 
-# Fit EVT Peaks-Over-Threshold
-u = float(np.percentile(errors, 90))
-excess = [x - u for x in errors if x > u]
-if len(excess) > 5:
-    scale_evt = float(np.mean(excess))
-    shape_evt = -0.05
-    q = 0.01
-    Nu = len(excess)
-    N = len(errors)
-    z_q = u + (scale_evt / shape_evt) * (((q * N / Nu) ** (-shape_evt)) - 1) if shape_evt != 0 else u - scale_evt * np.log(q * N / Nu)
-    thresh_evt = float(z_q)
-else:
-    thresh_evt = float(T)
-    scale_evt = 0.08
-    shape_evt = -0.058
+# Compute validation scores
+ensemble_scores = []
+with torch.no_grad():
+    for seq in normal_seqs:
+        score_dict = model.compute_anomaly_score(seq)
+        ensemble_scores.append(score_dict.get('combined_score', 0.0))
+
+p99_ensemble = float(np.percentile(ensemble_scores, 99)) if ensemble_scores else 1.65
+evt_res = model.fit_evt_threshold(ensemble_scores, target_fpr=0.01)
+thresh_evt = float(evt_res['threshold'])
+shape_evt = float(evt_res['shape'])
+scale_evt = float(evt_res['scale'])
+
+print(f'[Seq-VAE] Fitted EVT threshold: T={thresh_evt:.4f} (shape={shape_evt:.4f}, scale={scale_evt:.4f}), P99={p99_ensemble:.4f}')
+
+calib_dict = {
+    'threshold_evt': thresh_evt,
+    'threshold_p99': p99_ensemble,
+    'evt_shape': shape_evt,
+    'evt_scale': scale_evt,
+    'steepness': 0.5,
+    'steepness_k': 2.0,
+    'target_fpr': 0.01,
+    'model': 'sequence_vae_geometry_novel',
+    'val_samples': len(normal_seqs)
+}
 
 with open('$CALIB_DIR/vae_calibration.json', 'w') as f:
-    json.dump({
-        'threshold_evt': float(thresh_evt),
-        'threshold_p99': float(T),
-        'evt_shape': float(shape_evt),
-        'evt_scale': float(scale_evt),
-        'steepness': float(k),
-        'steepness_k': 2.0,
-        'target_fpr': 0.01,
-        'model': 'sequence_vae_geometry_novel'
-    }, f, indent=2)
+    json.dump(calib_dict, f, indent=2)
+
+with open('$CALIB_DIR/sequence_vae_calibration.json', 'w') as f:
+    json.dump(calib_dict, f, indent=2)
 "
-ok "Seq-VAE sigmoid calibration saved"
+ok "Seq-VAE EVT & Sigmoid calibration saved"
 
 # --- STEP 5: Cross-Model Sync Verification ----------------------------------
 header "STEP 5/6: Cross-Model Calibration Sync Verification"
