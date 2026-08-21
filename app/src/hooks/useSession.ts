@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { MonitoringSession } from "../lib/types";
+import { MOCK_SESSIONS } from "../lib/mock-provider";
 
 export function useSession(sessionId: string) {
   return useQuery<MonitoringSession>({
@@ -11,18 +12,19 @@ export function useSession(sessionId: string) {
       try {
         return await api.getSessionById(sessionId);
       } catch {
-        const fallback: MonitoringSession = {
+        const found = MOCK_SESSIONS.find((s) => s.id === sessionId);
+        if (found) return found;
+        return {
           id: sessionId,
-          name: "NDLS-AGC Mainline Inspection Run",
+          name: `Inspection Run ${sessionId}`,
           trackId: "IR-NR-01",
           trackSection: "New Delhi to Mathura Junction (Km 0.0 to 140.0)",
-          startTime: new Date(Date.now() - 3600 * 1000 * 2).toISOString(),
+          startTime: "2026-08-21T06:00:00.000Z",
           status: "active",
           totalDistanceKm: 140.0,
           defectsCount: 5,
           operatorName: "Chief Track Inspector A. Sharma",
         };
-        return fallback;
       }
     },
     enabled: !!sessionId,

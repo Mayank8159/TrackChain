@@ -14,11 +14,18 @@ import type {
   PresignDownloadResponse,
 } from "./types";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+function getBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    // In browser, if NEXT_PUBLIC_API_BASE_URL is set, use it; otherwise use relative path so Next.js rewrites proxy cleanly
+    return process.env.NEXT_PUBLIC_API_BASE_URL || "";
+  }
+  // In server-side / SSR context, default to direct local backend
+  return process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE_URL}${path}`;
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -121,17 +128,16 @@ export const api = {
       body: JSON.stringify({ s3_key: s3Key }),
     }),
 
-  // Frame Processing (CV line detection)
-  processFrame: (cameraId: string, base64Frame: string) =>
-    request<{
-      camera_id: string;
-      resolution: [number, number];
-      line_count: number;
-      lines: LineGeometry[];
-      processing_ms: number;
-      status: string;
-    }>("/process-frame", {
-      method: "POST",
-      body: JSON.stringify({ camera_id: cameraId, frame: base64Frame }),
-    }),
+  // RDSO / Compliance Report Export
+  exportSessionReport: async (sessionId: string, format: "csv" | "parquet" = "csv"): Promise<Blob> => {
+    const baseUrl = getBaseUrl();
+    const url = `${baseUrl}/api/dashboard/export/${sessionId}?format=${format}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Export error [${response.status}]: ${errorText}`);
+    }
+    return response.blob();
+  },
 };
+

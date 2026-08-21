@@ -1,47 +1,67 @@
-// Fetch and subscribe to alerts.
+// Fetch and subscribe to real-time Server-Sent Events (SSE) alerts with audio cues and triage actions (tc.v1).
 
 import { useState, useEffect, useCallback } from "react";
 import type { AlertEvent } from "../lib/types";
-
-const INITIAL_ALERTS: AlertEvent[] = [
-  {
-    id: "ALT-001",
-    defectId: "DEF-001",
-    severity: "critical",
-    defectClass: "crack",
-    chainageM: 3420,
-    message: "Transverse railhead fracture detected with high confidence",
-    timestamp: new Date().toISOString(),
-    acknowledged: false,
-  },
-  {
-    id: "ALT-002",
-    defectId: "DEF-005",
-    severity: "critical",
-    defectClass: "twist_exceedance",
-    chainageM: 21950,
-    message: "EN 13848-1 Immediate Action Limit (IAL) twist exceeded (4.2 mm/m)",
-    timestamp: new Date(Date.now() - 60000).toISOString(),
-    acknowledged: false,
-  },
-  {
-    id: "ALT-003",
-    defectId: "DEF-002",
-    severity: "high",
-    defectClass: "gauge_widening",
-    chainageM: 7850,
-    message: "Track gauge widening: 1448mm (+13mm above 1435mm standard)",
-    timestamp: new Date(Date.now() - 180000).toISOString(),
-    acknowledged: true,
-    acknowledgedBy: "Inspector Verma",
-    acknowledgedAt: new Date(Date.now() - 120000).toISOString(),
-  },
-];
+import { sseClient } from "../lib/sse";
+import { MOCK_ALERTS } from "../lib/mock-provider";
+import { audioManager } from "../lib/audio";
 
 export function useAlerts() {
-  const [alerts, setAlerts] = useState<AlertEvent[]>(INITIAL_ALERTS);
+  const [alerts, setAlerts] = useState<AlertEvent[]>(MOCK_ALERTS);
+  const [snoozedClasses, setSnoozedClasses] = useState<string[]>([]);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(audioManager.isEnabled());
 
-  const acknowledgeAlert = useCallback((id: string, operator = "Station Master") => {
+  const toggleSound = useCallback(() => {
+    const next = !audioManager.isEnabled();
+    audioManager.setEnabled(next);
+    setSoundEnabled(next);
+    if (next) {
+      audioManager.playAckChime();
+    }
+  }, []);
+
+  useEffect(() => {
+    // Subscribe to live SSE alerts from backend /api/alerts/stream
+    const unsubscribe = sseClient.subscribeAlerts((incomingAlert: any) => {
+      if (!incomingAlert) return;
+      const defectClass = incomingAlert.defect_class || incomingAlert.defectClass || "visual_anomaly";
+
+      // Ignore if class is currently snoozed
+      if (snoozedClasses.includes(defectClass)) return;
+
+      const severity = incomingAlert.severity || "high";
+      const newAlert: AlertEvent = {
+        id: incomingAlert.id || `ALT-${Date.now()}`,
+        defectId: incomingAlert.defect_id || incomingAlert.defectId || "DEF-001",
+        severity,
+        defectClass,
+        chainageM: incomingAlert.chainage_m ?? incomingAlert.chainageM ?? 0,
+        message:
+          incomingAlert.message ||
+          `Critical safety fault [${defectClass.toUpperCase()}] detected at ${(
+            (incomingAlert.chainage_m || 0) / 1000
+          ).toFixed(3)} km`,
+        timestamp: incomingAlert.timestamp || new Date().toISOString(),
+        acknowledged: false,
+      };
+
+      // Trigger audio alarm if sound is enabled
+      if (severity === "critical") {
+        audioManager.playCriticalAlarm();
+      } else if (severity === "high") {
+        audioManager.playHighWarning();
+      }
+
+      setAlerts((prev) => [newAlert, ...prev.filter((a) => a.id !== newAlert.id)]);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [snoozedClasses]);
+
+  const acknowledgeAlert = useCallback((id: string, operator = "Chief Track Inspector") => {
+    audioManager.playAckChime();
     setAlerts((prev) =>
       prev.map((a) =>
         a.id === id
@@ -56,5 +76,31 @@ export function useAlerts() {
     );
   }, []);
 
-  return { alerts, acknowledgeAlert };
+  const escalateAlert = useCallback((id: string) => {
+    audioManager.playHighWarning();
+    setAlerts((prev) =>
+      prev.map((a) =>
+        a.id === id
+          ? {
+              ...a,
+              message: `[ESCALATED TO SUPERVISOR] ${a.message}`,
+            }
+          : a
+      )
+    );
+  }, []);
+
+  const muteClass = useCallback((defectClass: string) => {
+    setSnoozedClasses((prev) => [...prev, defectClass]);
+  }, []);
+
+  return {
+    alerts,
+    acknowledgeAlert,
+    escalateAlert,
+    muteClass,
+    snoozedClasses,
+    soundEnabled,
+    toggleSound,
+  };
 }
