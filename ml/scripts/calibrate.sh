@@ -143,7 +143,7 @@ header "STEP 4/5: Seq-VAE EVT & Sigmoid Calibration"
 python -c "
 import os, sys, json, glob, numpy as np, pandas as pd, torch
 sys.path.append('.')
-from ml.models.geometry.sequence_vae_enhanced import EnhancedSequenceVAE
+from ml.models.geometry.sequence_vae import EnhancedSequenceVAE
 from ml.calibration.patchcore_scale import SigmoidDistanceCalibrator
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'

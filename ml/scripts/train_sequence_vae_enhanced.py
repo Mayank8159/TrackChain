@@ -32,7 +32,7 @@ from torch.utils.data import DataLoader, Dataset
 
 # Add repo root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
-from ml.models.geometry.sequence_vae_enhanced import EnhancedSequenceVAE
+from ml.models.geometry.sequence_vae import EnhancedSequenceVAE
 
 
 class GeometrySequenceDataset(Dataset):

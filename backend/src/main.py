@@ -116,26 +116,41 @@ def _init_db_if_needed():
 def create_app() -> FastAPI:
     settings = _get_settings()
 
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Startup
+        from src.services.artifacts import load_artifacts
+        app.state.ml = load_artifacts()
+        from src.services.pipeline import start_worker
+        app.state.worker = await start_worker(app.state.ml)
+        
+        import asyncio
+        from src.services.alerts import set_main_event_loop
+        set_main_event_loop(asyncio.get_running_loop())
+        
+        yield
+        
+        # Shutdown
+        if hasattr(app.state, "worker"):
+            app.state.worker.cancel()
+
     _application = FastAPI(
         title=settings.PROJECT_NAME,
         version=settings.VERSION,
         description="TrackChain Integrated Track Monitoring & Edge AI Backend API",
+        lifespan=lifespan,
     )
-
-    @_application.on_event("startup")
-    async def on_startup():
-        import asyncio
-        from src.services.alerts import set_main_event_loop
-        set_main_event_loop(asyncio.get_running_loop())
 
     # --- Middleware (order matters: last added = first executed) ---
 
     _application.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS if settings.ENVIRONMENT == "production" else ["*"],
+        allow_origins=os.getenv("CORS_ORIGINS", "https://trackchain.vercel.app").split(","),
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Device-ID", "X-Idempotency-Key", "X-Signature"],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     # --- Observability middleware (lazy import) ---
@@ -206,10 +221,13 @@ def create_app() -> FastAPI:
     # --- Routers ---
     from src.api.routes import (
         health, telemetry, defects, sessions, media,
-        devices, dashboard, ml, alerts,
+        devices, dashboard, ml, alerts, ingest
     )
+    from src.gateway import node_ws, live_ws
 
     _application.include_router(health.router)
+    _application.include_router(node_ws.router)
+    _application.include_router(live_ws.router)
 
     api_router = APIRouter()
     api_router.include_router(telemetry.router)
@@ -220,6 +238,7 @@ def create_app() -> FastAPI:
     api_router.include_router(dashboard.router)
     api_router.include_router(ml.router)
     api_router.include_router(alerts.router)
+    api_router.include_router(ingest.router)
 
     _application.include_router(api_router, prefix="/api")
     _application.include_router(api_router, prefix="/api/v1")
@@ -315,25 +334,39 @@ def _process_frame_logic(req: Any, LineGeometry: Any, ProcessFrameResponse: Any)
     rails = [l for l in geometry if abs(l.angle_deg) < 35 or abs(l.angle_deg) > 145]
     sleepers = [l for l in geometry if 35 <= abs(l.angle_deg) <= 145]
 
-    # YOLO (lazy, container-reused)
-    _load_yolo()
+    # YOLO Inference (lazy, fallback to ONNX if ultralytics unavailable or ONNX_MODE=true)
     yolo_boxes: List[dict] = []
-    if _yolo_loaded and _yolo_model is not None:
+    
+    if os.getenv("ONNX_MODE", "").lower() == "true":
+        # Pure ONNX execution (Torch-free cloud mode)
         try:
-            results = _yolo_model.predict(source=img, conf=0.25, verbose=False)
-            if results and len(results) > 0 and results[0].boxes is not None:
-                for box in results[0].boxes:
-                    cls_idx = int(box.cls[0].item() if hasattr(box.cls[0], "item") else box.cls[0])
-                    name = results[0].names.get(cls_idx, str(cls_idx))
-                    conf = float(box.conf[0].item() if hasattr(box.conf[0], "item") else box.conf[0])
-                    xyxy = box.xyxy[0].tolist()
-                    yolo_boxes.append({
-                        "class": name, "confidence": round(conf, 4),
-                        "xmin": round(float(xyxy[0]), 2), "ymin": round(float(xyxy[1]), 2),
-                        "xmax": round(float(xyxy[2]), 2), "ymax": round(float(xyxy[3]), 2),
-                    })
+            from src.services.onnx_inference import infer_yolo, load_onnx_model, _loaded as _onnx_loaded
+            if not _onnx_loaded:
+                load_onnx_model()
+            yolo_boxes = infer_yolo(img, conf_thresh=0.25)
+            global _yolo_loaded
+            _yolo_loaded = _onnx_loaded
         except Exception as e:
-            _log(f"YOLO inference failed: {e}")
+            _log(f"ONNX inference failed: {e}")
+    else:
+        # Standard Ultralytics execution
+        _load_yolo()
+        if _yolo_loaded and _yolo_model is not None:
+            try:
+                results = _yolo_model.predict(source=img, conf=0.25, verbose=False)
+                if results and len(results) > 0 and results[0].boxes is not None:
+                    for box in results[0].boxes:
+                        cls_idx = int(box.cls[0].item() if hasattr(box.cls[0], "item") else box.cls[0])
+                        name = results[0].names.get(cls_idx, str(cls_idx))
+                        conf = float(box.conf[0].item() if hasattr(box.conf[0], "item") else box.conf[0])
+                        xyxy = box.xyxy[0].tolist()
+                        yolo_boxes.append({
+                            "class": name, "confidence": round(conf, 4),
+                            "xmin": round(float(xyxy[0]), 2), "ymin": round(float(xyxy[1]), 2),
+                            "xmax": round(float(xyxy[2]), 2), "ymax": round(float(xyxy[3]), 2),
+                        })
+            except Exception as e:
+                _log(f"YOLO inference failed: {e}")
 
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
 

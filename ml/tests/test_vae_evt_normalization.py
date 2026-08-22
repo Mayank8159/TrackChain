@@ -16,7 +16,7 @@ repo_root = Path(__file__).resolve().parent.parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from ml.models.geometry.sequence_vae_enhanced import EnhancedSequenceVAE
+from ml.models.geometry.sequence_vae import EnhancedSequenceVAE
 from ml.calibration.unified_calibrator import UnifiedCalibrator
 from ml.calibration.patchcore_scale import SigmoidDistanceCalibrator
 

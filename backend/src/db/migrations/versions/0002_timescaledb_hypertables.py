@@ -22,12 +22,19 @@ def upgrade() -> None:
 
     if dialect_name == "postgresql":
         try:
-            # Enable TimescaleDB extension if not already enabled
-            op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
+            # Check if timescaledb extension is available on the server (handles RDS which lacks it)
+            result = bind.execute(sa.text("SELECT 1 FROM pg_available_extensions WHERE name = 'timescaledb'"))
+            is_available = result.scalar() is not None
             
-            # Convert telemetry_samples and ml_signals to TimescaleDB hypertables partitioned by 1 day
-            op.execute("SELECT create_hypertable('telemetry_samples', 'timestamp', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE);")
-            op.execute("SELECT create_hypertable('ml_signals', 'timestamp', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE);")
+            if is_available:
+                # Enable TimescaleDB extension if not already enabled
+                op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
+                
+                # Convert telemetry_samples and ml_signals to TimescaleDB hypertables partitioned by 1 day
+                op.execute("SELECT create_hypertable('telemetry_samples', 'timestamp', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE);")
+                op.execute("SELECT create_hypertable('ml_signals', 'timestamp', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE);")
+            else:
+                print("[WARN] TimescaleDB extension not available on this PostgreSQL server (e.g. RDS). Skipping hypertable creation.")
         except Exception as exc:
             print(f"[WARN] TimescaleDB hypertable creation skipped or unsupported: {exc}")
 

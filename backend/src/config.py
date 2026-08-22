@@ -23,11 +23,14 @@ class Settings(BaseSettings):
     # Redis (Rate limiting and caching)
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
-    # S3 / MinIO
+    # S3 / MinIO / Local Storage
+    STORAGE_BACKEND: str = "local"  # "s3" or "local"
     S3_ENDPOINT_URL: Optional[str] = "http://localhost:9000"
+    S3_PUBLIC_ENDPOINT: Optional[str] = None
     S3_ACCESS_KEY: str = "minioadmin"
     S3_SECRET_KEY: str = "minioadmin"
     S3_BUCKET_NAME: str = "trackchain-media"
+    MODEL_BUCKET: str = "trackchain-models-prod"
     S3_REGION: str = "us-east-1"
 
     # Security & Auth

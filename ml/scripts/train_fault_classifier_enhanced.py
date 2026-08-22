@@ -25,7 +25,7 @@ from torch.utils.data import DataLoader, Dataset
 
 # Add repo root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
-from ml.models.geometry.fault_classifier_enhanced import (
+from ml.models.geometry.fault_classifier import (
     EnhancedBiLSTMClassifier,
     SequenceAugmentation,
 )

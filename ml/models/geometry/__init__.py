@@ -1,7 +1,10 @@
 # Geometry models package marker.
+# All classes are now in their canonical modules (no *_enhanced.py duplicates).
 
-from ml.models.geometry.sequence_vae import DilatedEncoder, SequenceVAE, SequenceVAEDetector
-from ml.models.geometry.sequence_vae_enhanced import (
+from ml.models.geometry.sequence_vae import (
+    DilatedEncoder,
+    SequenceVAE,
+    SequenceVAEDetector,
     DilatedEncoder1D,
     Decoder1D,
     EnhancedSequenceVAE,
@@ -11,8 +14,6 @@ from ml.models.geometry.fault_classifier import (
     BiLSTMAttention,
     BiLSTMGeometryClassifier,
     GeometryFaultClassifier,
-)
-from ml.models.geometry.fault_classifier_enhanced import (
     MultiHeadAttention1D,
     EnhancedBiLSTMClassifier,
     SequenceAugmentation,

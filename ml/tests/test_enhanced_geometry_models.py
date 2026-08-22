@@ -7,13 +7,13 @@ import numpy as np
 import pytest
 import torch
 
-from ml.models.geometry.sequence_vae_enhanced import (
+from ml.models.geometry.sequence_vae import (
     DilatedEncoder1D,
     Decoder1D,
     EnhancedSequenceVAE,
     OverlappingWindowInference,
 )
-from ml.models.geometry.fault_classifier_enhanced import (
+from ml.models.geometry.fault_classifier import (
     MultiHeadAttention1D,
     EnhancedBiLSTMClassifier,
     SequenceAugmentation,

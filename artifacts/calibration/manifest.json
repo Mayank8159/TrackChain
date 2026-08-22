@@ -1,0 +1,57 @@
+{
+  "schema_version": "tc.v1",
+  "revision": "latest",
+  "models": {
+    "yolo_visual_detector": {
+      "method": "temperature",
+      "T": 1.8389288187026978,
+      "threshold": 0.5,
+      "artifact": "yolov8n_rail_best.onnx",
+      "sha256": "62511d9062b69e491416ebff75a78513922fc59de1f30fd5931ca5fe4d83050c"
+    },
+    "patchcore_visual_anomaly": {
+      "method": "sigmoid_p99",
+      "T": 21.935548591613767,
+      "k": 0.5,
+      "threshold": 0.5,
+      "artifact": "patchcore_memory_bank.npz",
+      "sha256": "628cfd79ef86b364e5aea1a4c62e839c90b7fb6b6691db09f5e057b934183bd2"
+    },
+    "physics_en13848": {
+      "method": "exceedance",
+      "threshold": 0.5,
+      "artifact": null
+    },
+    "bilstm_geometry_typing": {
+      "method": "vector_scaling",
+      "T": 1.5,
+      "weights": [
+        1.0001301765441895,
+        1.0172290802001953,
+        1.0044870376586914,
+        0.9612321257591248,
+        0.9948858618736267,
+        1.04097318649292
+      ],
+      "biases": [
+        -0.019473878666758537,
+        -0.0029863938689231873,
+        0.02925443835556507,
+        -0.02786562219262123,
+        -0.0066682035103440285,
+        0.027753112837672234
+      ],
+      "threshold": 0.6,
+      "artifact": "bilstm_fault_typing_enhanced.pt",
+      "sha256": "99391a037e03ad36315e12755deff0ca06637adb0c50f9cc78e7d421f2c22239"
+    },
+    "sequence_vae_geometry_novel": {
+      "method": "evt_sigmoid",
+      "T": 1.7073706829961885,
+      "k": 2.0,
+      "threshold": 0.5,
+      "artifact": "sequence_vae_enhanced.pt",
+      "sha256": "de7d00b14bde7d30eb2321f304e0deda7e567d5ad74747d8afdafb9d213ef764"
+    }
+  }
+}
