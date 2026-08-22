@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from src.schemas.telemetry import ProcessFrameRequest, ProcessFrameResponse, LineGeometry
 
+
 # ---------------------------------------------------------------------------
 # Lazy / guarded heavy imports — NEVER at top level for Lambda
 # ---------------------------------------------------------------------------

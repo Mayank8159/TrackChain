@@ -1,0 +1,29 @@
+{
+  "known": {
+    "file": "known_missing_fastener.jpg",
+    "role": "known",
+    "yolo_max": 0.315,
+    "n_boxes": 1,
+    "patchcore": 0.982,
+    "pc_raw_dist": 29.9479
+  },
+  "clean": {
+    "file": "clean_healthy_track.jpg",
+    "role": "clean",
+    "yolo_max": 0.0,
+    "n_boxes": 0,
+    "patchcore": 0.946,
+    "pc_raw_dist": 27.6579
+  },
+  "novel": {
+    "file": "novel_ood_cone_anomaly.jpg",
+    "role": "novel",
+    "yolo_max": 0.252,
+    "n_boxes": 1,
+    "patchcore": 1.0,
+    "pc_raw_dist": 38.0185
+  },
+  "yolo_threshold": 0.158,
+  "margin": 0.315,
+  "note": "Pre-verified. Do not edit by hand."
+}
