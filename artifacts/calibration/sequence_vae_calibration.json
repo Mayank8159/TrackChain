@@ -1,7 +1,11 @@
 {
-  "method": "sigmoid_threshold_scaling",
-  "threshold_p99": 3.7391321659088135,
+  "threshold_evt": 1.7073706829961885,
+  "threshold_p99": 1.7093709782047175,
+  "evt_shape": -0.4942446980911774,
+  "evt_scale": 0.061660154318305516,
+  "steepness": 0.5,
   "steepness_k": 2.0,
-  "percentile": 99.0,
-  "is_fitted": true
+  "target_fpr": 0.01,
+  "model": "sequence_vae_geometry_novel",
+  "val_samples": 200
 }

@@ -1,0 +1,15 @@
+{
+  "p99_threshold": 21.932721138000485,
+  "normal_mean_dist": 16.642156619470097,
+  "normal_max_dist": 23.398029327392578,
+  "num_normal_samples": 206,
+  "memory_bank_patches": 3000,
+  "feature_dim": 1536,
+  "backbone": "wide_resnet50_2",
+  "false_positive_rate": 0.014563106796116505,
+  "true_positive_rate": 0.94,
+  "defect_mean_dist": 25.81738883972168,
+  "defect_min_dist": 18.01239585876465,
+  "num_defect_samples": 50,
+  "separation_margin": 9.175232220251583
+}

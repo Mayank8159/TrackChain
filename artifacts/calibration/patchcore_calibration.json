@@ -1,9 +1,6 @@
 {
-  "method": "sigmoid_threshold_scaling",
-  "threshold_p99": 21.877426147460938,
-  "steepness_k": 0.5,
-  "percentile": 99.0,
-  "is_fitted": true,
-  "model": "patchcore_anomaly_detector",
-  "val_samples": 500
+  "threshold_p99": 21.935548591613767,
+  "steepness": 0.5,
+  "target_fpr": 0.01,
+  "model": "patchcore_visual_anomaly"
 }
