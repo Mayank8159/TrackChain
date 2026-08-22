@@ -1,28 +1,26 @@
 #!/usr/bin/env bash
-# =============================================================================
-# TrackChain Docker Deployment Orchestrator
-# =============================================================================
+set -euo pipefail
 
-set -e
+# --- Colors & Logging ---
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
+info()  { echo -e "${BLUE}[INFO]${NC}  $1"; }
+ok()    { echo -e "${GREEN}[OK]${NC}    $1"; }
+header(){ echo -e "\n${CYAN}═══════════════════════════════════════════════════${NC}"; echo -e "${CYAN}  $1${NC}"; echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"; }
 
-echo "========================================================================="
-echo "             DEPLOYING TRACKCHAIN CONTAINER INFRASTRUCTURE               "
-echo "========================================================================="
+header "Deploying TrackChain Container Infrastructure"
+cd "$(dirname "$0")/../.."
 
-echo "[1/3] Building Docker containers (FastAPI + TimescaleDB + MinIO)..."
-docker-compose build
+info "[1/3] Building Docker containers (FastAPI + TimescaleDB + MinIO)..."
+docker compose build
 
-echo "[2/3] Starting backend services in detached mode..."
-docker-compose up -d
+info "[2/3] Starting backend services in detached mode..."
+docker compose up -d
 
-echo "[3/3] Checking container health status..."
-docker-compose ps
+info "[3/3] Checking container health status..."
+docker compose ps
 
-echo ""
-echo "========================================================================="
-echo "TrackChain is live:"
-echo " - API Base URL:       http://localhost:8000"
-echo " - API Documentation:  http://localhost:8000/docs"
-echo " - Prometheus Metrics: http://localhost:8000/metrics"
-echo " - MinIO S3 Console:   http://localhost:9001"
-echo "========================================================================="
+header "TrackChain Container Stack Live"
+ok "API Base URL:       http://localhost:8000"
+ok "API Documentation:  http://localhost:8000/docs"
+ok "Prometheus Metrics: http://localhost:8000/metrics"
+ok "MinIO S3 Console:   http://localhost:9001"

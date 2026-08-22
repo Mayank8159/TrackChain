@@ -132,16 +132,6 @@ Resources:
                 - xray:PutTelemetryRecords
               Resource: "*"
 
-  # ---- Lambda Layer (shared deps) ----
-  TrackChainDependenciesLayer:
-    Type: AWS::Serverless::LayerVersion
-    Properties:
-      LayerName: trackchain-deps
-      ContentUri: lambda_layer/trackchain-layer.zip
-      CompatibleRuntimes:
-        - python3.11
-      RetentionPolicy: Retain
-
   # ---- S3 Media Bucket ----
   MediaBucket:
     Type: AWS::S3::Bucket

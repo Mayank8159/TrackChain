@@ -93,18 +93,15 @@ backend/
 ├── samconfig.toml              # AWS SAM CLI deployment parameters
 ├── template.yaml               # CloudFormation Serverless Application Model (SAM)
 ├── scripts/                    # Unified lifecycle and automation scripts
-│   ├── build.sh                # Container & Lambda layer builder
+│   ├── build.sh                # Container image builder (dev, prod, lambda)
 │   ├── run.sh                  # Local development server orchestrator
 │   ├── test.sh                 # Test runner (pytest)
 │   ├── migrate.sh              # Database migration runner (Alembic)
 │   ├── init_db.sh              # Database schema & PostGIS initializer
-│   ├── deploy_docker.sh        # Docker deployment runner
-│   ├── deploy_docker.ps1       # Windows PowerShell deployment runner
+│   ├── deploy_docker.sh        # Docker Compose deployment runner
 │   ├── prod_launch.sh          # Production stack launcher
-│   ├── prod_launch.ps1         # Windows PowerShell production launcher
 │   ├── remote_smoke.sh         # Smoke test against deployed endpoints
-│   ├── seed.py                 # Core database seeder
-│   └── seed_real_session.py    # High-density real TRC session seeder
+│   └── seed.py                 # Master database seeder (basic & physics modes)
 └── src/
     ├── main.py                 # FastAPI application factory & Mangum handler
     ├── config.py               # Pydantic v2 Settings loader (.env parsing)
@@ -156,15 +153,14 @@ All scripts in `backend/scripts/` follow strict bash conventions (`set -euo pipe
 | Script | Purpose | Usage |
 | :--- | :--- | :--- |
 | `run.sh` | Sets up venv, installs requirements, exports `.env`, and launches Uvicorn on port `8000`. | `./scripts/run.sh` |
-| `build.sh` | Builds the production Docker image (`trackchain-backend:latest`) and packages the Lambda zip layer. | `./scripts/build.sh` |
+| `build.sh` | Builds Docker images (`dev`, `prod` ECS Fargate, or `lambda` container). | `./scripts/build.sh [dev\|prod\|lambda\|all]` |
 | `test.sh` | Executes the test suite via `pytest` with concise traceback formatting. | `./scripts/test.sh` |
 | `migrate.sh` | Applies Alembic migrations (`head`) or generates new auto-migrations. | `./scripts/migrate.sh [create "name"]` |
 | `init_db.sh` | Connects to PostgreSQL, activates PostGIS/TimescaleDB extensions, and applies DDL. | `./scripts/init_db.sh` |
 | `deploy_docker.sh` | Spins up the containerized service stack using Docker Compose. | `./scripts/deploy_docker.sh` |
 | `prod_launch.sh` | Validates environment configurations, applies migrations, and executes production startup. | `./scripts/prod_launch.sh` |
 | `remote_smoke.sh` | Runs health, telemetry, and defect endpoint sanity tests against a deployed URL. | `./scripts/remote_smoke.sh <BASE_URL>` |
-| `seed.py` | Seeds the database with default devices, sessions, defect catalogues, and sample tracks. | `python scripts/seed.py` |
-| `seed_real_session.py`| Seeds realistic high-density track recording runs with EN 13848 geometry signals. | `python scripts/seed_real_session.py` |
+| `seed.py` | Master database seeder supporting basic setup and `--realistic` / `--physics` 10km track runs. | `python scripts/seed.py [--realistic]` |
 
 ---
 

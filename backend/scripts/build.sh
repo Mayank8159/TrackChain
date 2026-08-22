@@ -10,18 +10,26 @@ err()   { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 header(){ echo -e "\n${CYAN}═══════════════════════════════════════════════════${NC}"; echo -e "${CYAN}  $1${NC}"; echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"; }
 
 header "TrackChain Backend Build Pipeline"
-cd "$(dirname "$0")/.." # Move to backend root
+cd "$(dirname "$0")/.."
 
-info "Building ECS Fargate Docker Image..."
-docker build -t trackchain-backend:latest -f Dockerfile .
-ok "Docker image built successfully"
+TARGET="${1:-all}"
 
-if [ -d "lambda_layer" ]; then
-    info "Packaging Lambda Dependency Layer..."
-    cd lambda_layer
-    zip -r trackchain-layer.zip python/ > /dev/null
-    cd ..
-    ok "Lambda layer packaged: lambda_layer/trackchain-layer.zip"
+if [[ "$TARGET" == "dev" || "$TARGET" == "all" ]]; then
+    info "Building Development Docker Image (Dockerfile.dev)..."
+    docker build -t trackchain-backend:dev -f Dockerfile.dev .
+    ok "Dev image built: trackchain-backend:dev"
+fi
+
+if [[ "$TARGET" == "prod" || "$TARGET" == "all" ]]; then
+    info "Building Production ECS Fargate Docker Image (Dockerfile)..."
+    docker build -t trackchain-backend:latest -f Dockerfile .
+    ok "Production image built: trackchain-backend:latest"
+fi
+
+if [[ "$TARGET" == "lambda" ]]; then
+    info "Building AWS Lambda Image (Dockerfile.lambda)..."
+    docker build -t trackchain-backend:lambda -f Dockerfile.lambda .
+    ok "Lambda image built: trackchain-backend:lambda"
 fi
 
 header "Build Complete"

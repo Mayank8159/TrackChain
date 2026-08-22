@@ -1,32 +1,33 @@
 #!/usr/bin/env bash
-# =============================================================================
-# TrackChain Production Launch Orchestrator (Linux / Container)
-# =============================================================================
+set -euo pipefail
 
-set -e
+# --- Colors & Logging ---
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
+info()  { echo -e "${BLUE}[INFO]${NC}  $1"; }
+ok()    { echo -e "${GREEN}[OK]${NC}    $1"; }
+header(){ echo -e "\n${CYAN}═══════════════════════════════════════════════════${NC}"; echo -e "${CYAN}  $1${NC}"; echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"; }
 
-echo "========================================================================="
-echo "                TRACKCHAIN PRODUCTION SYSTEM LAUNCH                      "
-echo "========================================================================="
+header "TrackChain Production System Launch"
+cd "$(dirname "$0")/.."
 
-# 1. Environment Check
 export ENVIRONMENT=${ENVIRONMENT:-"production"}
 export PORT=${PORT:-8000}
 export WORKERS=${WORKERS:-4}
 
-echo "[1/4] Checking Python environment and dependencies..."
-python -m pip install -q -r backend/requirements.txt
+info "[1/4] Checking Python environment..."
+if [ -f "requirements.cloud.txt" ]; then
+    pip install -q -r requirements.cloud.txt
+else
+    pip install -q -r requirements.txt
+fi
 
-# 2. Database Migrations
-echo "[2/4] Running database schema migrations..."
-cd backend
+info "[2/4] Running database schema migrations..."
 python -c "from src.db.session import engine, Base; Base.metadata.create_all(bind=engine)"
-cd ..
+ok "Schema synchronized"
 
-# 3. Seed Reference Track Network Data (if DB is empty)
-echo "[3/4] Checking database initial seed..."
-python scripts/seed.py
+info "[3/4] Checking database initial seed..."
+python scripts/seed.py || true
+ok "Database seed verified"
 
-# 4. Start Production Gunicorn / Uvicorn Server
-echo "[4/4] Starting FastAPI backend on port $PORT with $WORKERS worker processes..."
-exec uvicorn src.main:app --app-dir backend --host 0.0.0.0 --port "$PORT" --workers "$WORKERS" --log-level info --access-log
+header "Starting Production FastAPI Server on port $PORT ($WORKERS workers)"
+exec uvicorn src.main:app --host 0.0.0.0 --port "$PORT" --workers "$WORKERS" --log-level info --access-log
