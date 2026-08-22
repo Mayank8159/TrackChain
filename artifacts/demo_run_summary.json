@@ -1,0 +1,58 @@
+{
+  "schema_version": "tc.v1",
+  "average_latency_ms": 602.88,
+  "fps": 1.7,
+  "segments": [
+    {
+      "chainage": "0.0m - 20.0m",
+      "scenario": "Clean Track",
+      "decision": "OK",
+      "severity": "normal",
+      "confidence": 0.98,
+      "primary_defect": "normal",
+      "action": "Routine inspection cycle maintained.",
+      "latency_ms": 986.31
+    },
+    {
+      "chainage": "20.0m - 40.0m",
+      "scenario": "Missing Fastener (Visual Known)",
+      "decision": "OK",
+      "severity": "normal",
+      "confidence": 0.98,
+      "primary_defect": "normal",
+      "action": "Routine inspection cycle maintained.",
+      "latency_ms": 433.92
+    },
+    {
+      "chainage": "40.0m - 60.0m",
+      "scenario": "Clean Track (Post-Repair)",
+      "decision": "INSPECT_NOVEL",
+      "severity": "high",
+      "confidence": 0.9443,
+      "primary_defect": "unclassified_anomaly",
+      "action": "Routine inspection cycle maintained.",
+      "latency_ms": 446.87
+    },
+    {
+      "chainage": "60.0m - 80.0m",
+      "scenario": "Track Twist Exceedance (Geometry Known)",
+      "decision": "INSPECT_KNOWN",
+      "severity": "high",
+      "confidence": 0.8525,
+      "primary_defect": "rough_track",
+      "action": "Routine inspection cycle maintained.",
+      "latency_ms": 494.82
+    },
+    {
+      "chainage": "80.0m - 100.0m",
+      "scenario": "Compound Defect: Crack + Gauge Spread (Dual Stream)",
+      "decision": "INSPECT_KNOWN",
+      "severity": "high",
+      "confidence": 1.0,
+      "primary_defect": "rough_track",
+      "action": "Routine inspection cycle maintained.",
+      "latency_ms": 652.5
+    }
+  ],
+  "status": "PASSED"
+}

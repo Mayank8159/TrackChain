@@ -8,50 +8,39 @@ from .s3 import get_storage_service
 frame_q = asyncio.Queue()
 imu_q = asyncio.Queue()
 
-class FrameSample:
-    def __init__(self, node_id: str, t: float, chainage: float, key: str, raw: bytes):
-        self.node_id = node_id
-        self.t = t
-        self.chainage = chainage
-        self.key = key
-        self.raw = raw
 
-class ImuSample:
-    def __init__(self, node_id: str, t: float, chainage: float, ax: float, ay: float, az: float, gx: float, gy: float, gz: float):
-        self.node_id = node_id
-        self.t = t
-        self.chainage = chainage
-        self.ax = ax
-        self.ay = ay
-        self.az = az
-        self.gx = gx
-        self.gy = gy
-        self.gz = gz
 
 async def push_frame(node_id: str, msg: Dict[str, Any]):
     raw = base64.b64decode(msg["b64"])
     ch = tracker.update(node_id, msg["t"], msg.get("speed"))
-    key = f"{node_id}/{tracker.session(node_id)}/{msg['seq']}.jpg"
+    key = f"frames/{node_id}/{tracker.session(node_id)}/{msg['seq']}.jpg"
     
     # Store frame in S3 asynchronously
     storage = get_storage_service()
-    
-    # In a real app, this would be an async boto3 wrapper, e.g., aioboto3.
-    # For now we'll simulate by wrapping the blocking call.
-    loop = asyncio.get_event_loop()
-    if hasattr(storage, "generate_presigned_put"):
-        # LocalStorageService mock
-        pass
+    if hasattr(storage, "async_upload_bytes"):
+        asyncio.create_task(storage.async_upload_bytes(raw, key))
         
-    await frame_q.put(FrameSample(node_id, msg["t"], ch, key, raw))
+    await frame_q.put({
+        "node_id": node_id,
+        "t": msg["t"],
+        "seq": msg.get("seq", 0),
+        "bytes": raw,
+        "s3_key": key,
+        "chainage": ch,
+        "w": msg.get("w", 0),
+        "h": msg.get("h", 0)
+    })
 
 async def push_imu(node_id: str, msg: Dict[str, Any]):
     ch = tracker.peek(node_id)
-    await imu_q.put(ImuSample(
-        node_id, msg["t"], ch,
-        ax=msg["ax"], ay=msg["ay"], az=msg["az"],
-        gx=msg["gx"], gy=msg["gy"], gz=msg["gz"]
-    ))
+    await imu_q.put({
+        "node_id": node_id,
+        "t": msg["t"],
+        "seq": msg.get("seq", 0),
+        "chainage": ch,
+        "ax": msg.get("ax", 0), "ay": msg.get("ay", 0), "az": msg.get("az", 0),
+        "gx": msg.get("gx", 0), "gy": msg.get("gy", 0), "gz": msg.get("gz", 0)
+    })
 
 async def node_offline(node_id: str):
     print(f"Node {node_id} went offline")

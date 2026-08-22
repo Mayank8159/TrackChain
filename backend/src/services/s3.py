@@ -182,6 +182,28 @@ class S3Service:
             UploadId=upload_id,
         )
 
+    async def async_upload_bytes(self, data: bytes, key: str) -> bool:
+        """Asynchronously upload raw bytes to S3, with a local filesystem fallback."""
+        import asyncio
+        def _upload():
+            s3 = self.get_client()
+            if s3:
+                try:
+                    s3.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType="image/jpeg")
+                    return True
+                except Exception as e:
+                    print(f"S3 upload failed: {e}")
+            # Local fallback on error
+            import os
+            fallback_dir = f"/tmp/trackchain-media/{self.bucket}"
+            os.makedirs(fallback_dir, exist_ok=True)
+            with open(os.path.join(fallback_dir, key.replace('/', '_')), 'wb') as f:
+                f.write(data)
+            return True
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _upload)
+
+
 class LocalStorageService:
     """
     Fallback storage service for local development without S3/MinIO.
@@ -193,6 +215,19 @@ class LocalStorageService:
         os.makedirs(self.base_dir, exist_ok=True)
         # Assuming backend runs on 8000 locally
         self.public_endpoint = "http://localhost:8000/media/local"
+
+    async def async_upload_bytes(self, data: bytes, key: str) -> bool:
+        """Asynchronously upload raw bytes to local storage."""
+        import asyncio
+        def _upload():
+            import os
+            os.makedirs(self.base_dir, exist_ok=True)
+            local_path = os.path.join(self.base_dir, key.replace('/', '_'))
+            with open(local_path, "wb") as f:
+                f.write(data)
+            return True
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _upload)
 
     def get_client(self):
         return self

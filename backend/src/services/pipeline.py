@@ -31,13 +31,13 @@ class MLPipeline:
                     
                     # Convert raw bytes back to base64 for frontend
                     import base64
-                    b64_frame = base64.b64encode(f.raw).decode('utf-8')
+                    b64_frame = base64.b64encode(f["bytes"]).decode('utf-8')
                     
                     await broadcast_live_event({
                         "type": "frame",
                         "b64": b64_frame,
-                        "t": f.t,
-                        "chainage": f.chainage
+                        "t": f["t"],
+                        "chainage": f.get("chainage", 0)
                     })
                     
             await asyncio.sleep(0.5)

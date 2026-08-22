@@ -1,6 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, Any
-from src.services import auth
+from src.services.auth import verify_node_token
 
 router = APIRouter()
 
@@ -18,17 +18,10 @@ def get_ingest_service():
 async def node_gateway(ws: WebSocket):
     token = ws.query_params.get("token", "")
     
-    # In a real system, verify HMAC vs DB-issued tokens.
-    # For now, we mock auth or allow generic "SECRET_TOKEN"
-    if not token or token != "SECRET_TOKEN":
-        await ws.close(code=4001)
+    node_id = verify_node_token(token)
+    if not node_id:
+        await ws.close(code=4001, reason="Unauthorized")
         return
-        
-    # Mock node object for now
-    class Node:
-        def __init__(self, node_id):
-            self.id = node_id
-    node = Node("TC-NODE-01")
             
     await ws.accept()
     ingest = get_ingest_service()
@@ -37,17 +30,20 @@ async def node_gateway(ws: WebSocket):
         while True:
             msg = await ws.receive_json()
             kind = msg.get("type")
-            if kind == "imu":
-                await ingest.push_imu(node.id, msg)
+            if kind == "hello":
+                node_id = msg.get("node_id", node_id)
+                print(f"Node {node_id} capabilities: {msg.get('caps', {})}")
+                # Send initial adaptive config
+                await ws.send_json({"type": "cfg", "fps": 5, "imu_hz": 20})
             elif kind == "frame":
-                await ingest.push_frame(node.id, msg)
+                await ingest.push_frame(node_id, msg)
+            elif kind == "imu":
+                await ingest.push_imu(node_id, msg)
             elif kind == "hb":
+                # Heartbeat acknowledgment and update last_seen (simulated)
                 await ws.send_json({"type": "ack", "t": msg.get("t")})
-            elif kind == "hello":
-                node.id = msg.get("node_id", node.id)
-                print(f"Node {node.id} connected via WebSocket")
     except WebSocketDisconnect:
-        await ingest.node_offline(node.id)
+        await ingest.node_offline(node_id)
     except Exception as e:
         print(f"Node WS Error: {e}")
         try:

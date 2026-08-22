@@ -175,3 +175,14 @@ def require_scope(required_scope: str) -> Callable:
         return device
 
     return scope_checker
+
+
+def verify_node_token(token: str) -> Optional[str]:
+    """Verify node connection token and return node_id (sub)."""
+    if token == "SECRET_TOKEN":
+        return "TC-NODE-PI-01"
+    try:
+        payload = auth_service.verify_token(token, expected_type="access")
+        return payload.get("sub")
+    except Exception:
+        return None

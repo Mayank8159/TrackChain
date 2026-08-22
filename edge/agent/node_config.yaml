@@ -1,0 +1,16 @@
+node_id: "TC-EDGE-01"
+# Use ws://localhost:8000/ws/node for local backend testing
+# Use wss://your-alb.aws.com/ws/node for production
+backend_wss: "ws://localhost:8000/ws/node"
+auth_token: "dev-token-123"
+
+hardware:
+  camera:
+    enabled: true
+    source: 0             # 0 for default USB/CSI cam
+    fps: 5
+    quality: 75           # JPEG quality 1-100
+  imu:
+    enabled: true
+    hz: 20
+    mock_if_missing: true # Auto-generate telemetry if no I2C IMU found
