@@ -17,6 +17,7 @@ from src.schemas.media import (
     MultipartInitiateRequest,
     MultipartInitiateResponse,
     MultipartCompleteRequest,
+    PresignDownloadRequest,
     PresignDownloadResponse,
     MediaAssetResponse,
 )
@@ -341,6 +342,23 @@ def transcode_media_hls(
         "master_playlist_key": result["master_playlist_key"],
         "renditions": result["renditions"],
     }
+
+
+@router.post("/presign-download", response_model=PresignDownloadResponse)
+def get_download_url_by_key(
+    req: PresignDownloadRequest,
+    db: Session = Depends(get_db_session),
+):
+    """Issue a presigned S3 download URL using just an S3 key."""
+    try:
+        url = s3_service.generate_presigned_get(key=req.s3_key)
+        return PresignDownloadResponse(
+            media_id="direct_key",
+            download_url=url,
+            expires_in_seconds=3600,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"S3 generation failed: {exc}")
 
 
 @router.get("/{media_id}/presign-download", response_model=PresignDownloadResponse)

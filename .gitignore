@@ -72,3 +72,6 @@ coverage/
 
 # Database files
 *.db
+
+# Embedded HF spaces
+trackchain-backend/

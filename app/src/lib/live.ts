@@ -1,6 +1,7 @@
 // TrackChain Live Streaming & Alerting Integration
+import { env } from "./env";
 
-export const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API = env.apiUrl;
 
 /**
  * Connects to the live WebSocket gateway for raw base64 frames and telemetry
@@ -10,9 +11,9 @@ export function connectLive(
   onFrame: (dataUrl: string, chainage: number) => void,
   onTelemetry: (data: any) => void
 ) {
-  const wsUrl = `${API.replace("http", "ws")}/ws/live?session=${session}`;
+  const wsUrl = `${env.wsUrl}?session=${session}`;
   const ws = new WebSocket(wsUrl);
-  
+
   ws.onmessage = (e) => {
     try {
       const m = JSON.parse(e.data);
@@ -26,7 +27,7 @@ export function connectLive(
       console.error("Live streaming message parse error:", err);
     }
   };
-  
+
   return ws;
 }
 
@@ -34,5 +35,5 @@ export function connectLive(
  * Connects to the live Server-Sent Events (SSE) broker for DefectEvents
  */
 export const connectAlerts = () => {
-  return new EventSource(`${API}/api/v1/alerts/stream`);
+  return new EventSource(env.sseUrl);
 };

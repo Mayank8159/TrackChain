@@ -231,6 +231,7 @@ def create_app() -> FastAPI:
     _application.include_router(live_ws.router)
 
     api_router = APIRouter()
+    api_router.include_router(health.router)
     api_router.include_router(telemetry.router)
     api_router.include_router(defects.router)
     api_router.include_router(sessions.router)
@@ -425,6 +426,9 @@ def _process_frame_logic(req: Any, LineGeometry: Any, ProcessFrameResponse: Any)
 app = create_app()
 _init_db_if_needed()
 
-# Mangum handler — ALWAYS defined, never None
-from mangum import Mangum  # type: ignore  # guaranteed in requirements
-handler = Mangum(app, api_gateway_base_path=os.getenv("API_GATEWAY_BASE_PATH", ""))
+# Mangum handler — fallback gracefully when running outside AWS Lambda
+try:
+    from mangum import Mangum  # type: ignore
+    handler = Mangum(app, api_gateway_base_path=os.getenv("API_GATEWAY_BASE_PATH", ""))
+except ImportError:
+    handler = None

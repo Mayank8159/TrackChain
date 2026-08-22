@@ -41,7 +41,8 @@ if "postgresql" in db_url:
 
 if engine is None:
     # Use SQLite for local development & instantaneous unit testing
-    sqlite_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../trackchain_dev.db"))
+    sqlite_dir = "/tmp" if os.name != "nt" and os.path.exists("/tmp") else os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
+    sqlite_path = os.getenv("SQLITE_PATH", os.path.join(sqlite_dir, "trackchain_dev.db"))
     engine = create_engine(
         f"sqlite:///{sqlite_path}",
         connect_args={"check_same_thread": False},

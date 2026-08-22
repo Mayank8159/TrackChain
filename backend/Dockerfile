@@ -29,4 +29,4 @@ ENV ONNX_MODE=true
 EXPOSE 7860
 
 # Single worker for SSE / WebSocket consistency. Timeout increased for long-running inferences.
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1", "--timeout-keep-alive", "120"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1", "--timeout-keep-alive", "120", "--proxy-headers", "--forwarded-allow-ips", "*"]

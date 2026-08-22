@@ -5,6 +5,7 @@
 import React from "react";
 import { AlertTriangle, Sparkles, RefreshCw, ServerOff, WifiOff } from "lucide-react";
 import { useModeStore } from "../../stores/mode-store";
+import { env } from "../../lib/env";
 import { Button } from "./Button";
 
 export function ModeBanner() {
@@ -38,7 +39,7 @@ export function ModeBanner() {
               REAL MODE ERROR: BACKEND UNREACHABLE
             </span>
             <span className="text-red-300/80 text-[11px] hidden sm:inline">
-              FastAPI server is not responding at http://localhost:8000.
+              FastAPI server is not responding at {env.apiUrl}.
             </span>
           </div>
 

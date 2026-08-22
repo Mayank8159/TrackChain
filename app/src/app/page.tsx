@@ -28,6 +28,7 @@ import { useAlerts } from "@/hooks/useAlerts";
 import { useToast } from "@/components/ui/Toast";
 import { sseClient } from "@/lib/sse";
 import { triggerDemoAlert } from "@/lib/mock-provider";
+import { env } from "@/lib/env";
 
 export default function OperationalDashboard() {
   const [timeRange, setTimeRange] = useState("24h");
@@ -134,7 +135,7 @@ export default function OperationalDashboard() {
       {isRealError && (
         <DataError
           title="Production Telemetry Stream Offline"
-          message="Failed to establish contact with the live FastAPI backend at http://localhost:8000. Switch to DEMO mode to view deterministic simulated track telemetry."
+          message={`Failed to establish contact with the live FastAPI backend at ${env.apiUrl}. Switch to DEMO mode to view deterministic simulated track telemetry.`}
           onRetry={handleRefresh}
         />
       )}

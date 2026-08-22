@@ -26,6 +26,11 @@ class PresignUploadResponse(BaseContractModel):
     expires_in_seconds: int = Field(default=3600)
 
 
+class PresignDownloadRequest(BaseContractModel):
+    s3_key: str = Field(..., description="The S3 key to generate a download URL for.")
+
+
+
 class MultipartPartItem(BaseContractModel):
     model_config = ConfigDict(populate_by_name=True)
 
