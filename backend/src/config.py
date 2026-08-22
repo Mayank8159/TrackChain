@@ -1,13 +1,26 @@
 # Settings loader (pydantic-settings) reading environment variables.
 
+import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Pre-load .env from possible candidate locations
+_backend_dir = Path(__file__).resolve().parent.parent
+_repo_dir = _backend_dir.parent
+
+for env_candidate in [_backend_dir / ".env", _repo_dir / ".env", Path(".env")]:
+    if env_candidate.exists() and env_candidate.is_file():
+        load_dotenv(dotenv_path=env_candidate, override=False)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file=(".env", str(_backend_dir / ".env"), str(_repo_dir / ".env")),
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     # General

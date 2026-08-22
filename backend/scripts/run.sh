@@ -22,13 +22,34 @@ source venv/bin/activate
 info "Installing dependencies..."
 pip install -q -r requirements.txt
 
-# Environment Variables
-if [ -f ".env" ]; then
-    info "Loading .env file..."
-    export $(cat .env | grep -v '^#' | xargs)
-else
-    warn ".env file not found. Using default environment variables."
-fi
+# Robust .env loader function
+load_env() {
+    local env_file="${1:-.env}"
+    if [ -f "$env_file" ]; then
+        info "Loading environment from $env_file..."
+        set -a
+        # shellcheck disable=SC1090
+        source "$env_file" 2>/dev/null || while IFS= read -r line || [ -n "$line" ]; do
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// }" ]] && continue
+            if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                val="${BASH_REMATCH[2]}"
+                val="${val%\"}"
+                val="${val#\"}"
+                val="${val%\'}"
+                val="${val#\'}"
+                export "$key"="$val"
+            fi
+        done < "$env_file"
+        set +a
+        ok "Environment variables loaded"
+    else
+        warn "$env_file not found. Using default environment variables."
+    fi
+}
+
+load_env ".env"
 
 header "Starting Uvicorn (FastAPI)"
 ok "Server running at http://localhost:8000"

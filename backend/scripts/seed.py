@@ -14,11 +14,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import numpy as np
 
-# Ensure backend root is in sys.path
+# Ensure backend root is in sys.path and load environment variables
 SCRIPT_DIR = Path(__file__).resolve().parent
 BACKEND_ROOT = SCRIPT_DIR.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
+
+from dotenv import load_dotenv
+for env_candidate in [BACKEND_ROOT / ".env", BACKEND_ROOT.parent / ".env", Path(".env")]:
+    if env_candidate.exists() and env_candidate.is_file():
+        load_dotenv(dotenv_path=env_candidate, override=False)
 
 from src.db.session import SessionLocal, engine, Base
 from src.db.models import Device, MonitoringSession, TelemetryRecord, DefectEvent, Alert
